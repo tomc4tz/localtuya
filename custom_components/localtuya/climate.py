@@ -37,6 +37,8 @@ from homeassistant.const import (
 from .common import LocalTuyaEntity, async_setup_entry
 from .const import (
     CONF_CURRENT_TEMPERATURE_DP,
+    CONF_TEMP_MAX,
+    CONF_TEMP_MIN,
     CONF_MAX_TEMP_DP,
     CONF_MIN_TEMP_DP,
     CONF_PRECISION,
@@ -116,6 +118,8 @@ def flow_schema(dps):
         vol.Optional(CONF_TEMPERATURE_STEP): vol.In(
             [PRECISION_WHOLE, PRECISION_HALVES, PRECISION_TENTHS]
         ),
+        vol.Optional(CONF_TEMP_MIN, default=DEFAULT_MIN_TEMP): vol.Coerce(float),
+        vol.Optional(CONF_TEMP_MAX, default=DEFAULT_MAX_TEMP): vol.Coerce(float),
         vol.Optional(CONF_MAX_TEMP_DP): vol.In(dps),
         vol.Optional(CONF_MIN_TEMP_DP): vol.In(dps),
         vol.Optional(CONF_PRECISION): vol.In(
@@ -335,14 +339,14 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         """Return the minimum temperature."""
         if self.has_config(CONF_MIN_TEMP_DP):
             return self.dps_conf(CONF_MIN_TEMP_DP)
-        return DEFAULT_MIN_TEMP
+        return self._config[CONF_TEMP_MIN]
 
     @property
     def max_temp(self):
         """Return the maximum temperature."""
         if self.has_config(CONF_MAX_TEMP_DP):
             return self.dps_conf(CONF_MAX_TEMP_DP)
-        return DEFAULT_MAX_TEMP
+        return self._config[CONF_TEMP_MAX]
 
     def status_updated(self):
         """Device status was updated."""
