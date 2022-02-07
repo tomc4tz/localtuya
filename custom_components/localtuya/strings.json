@@ -21,6 +21,7 @@
                     "local_key": "Local key",
                     "protocol_version": "Protocol Version",
                     "client_id": "Client Id",
+                    "scan_interval": "Scan interval (seconds, only when not updating automatically)",
                     "device_type": "Device type"
                 }
             },
