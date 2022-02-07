@@ -95,14 +95,20 @@ GATEWAY_PAYLOAD_DICT = {
         HEARTBEAT: {"hexByte": 0x09, "command": {}},
     },
     TYPE_0D: {
-        STATUS: {"hexByte": 0x0D, "command": {"devId": "", "uid": "", "cid": "", "t": ""}},
+        STATUS: {
+            "hexByte": 0x0D,
+            "command": {"devId": "", "uid": "", "cid": "", "t": ""},
+        },
         SET: {"hexByte": 0x07, "command": {"cid": ""}},
         HEARTBEAT: {"hexByte": 0x09, "command": {}},
     },
 }
 PAYLOAD_DICT = {
     TYPE_0A: {
-        STATUS: {"hexByte": 0x0A, "command": {"gwId": "", "devId": "", "uid": ""}},
+        STATUS: {
+            "hexByte": 0x0A,
+            "command": {"gwId": "", "devId": "", "uid": ""},
+        },
         SET: {"hexByte": 0x07, "command": {"devId": "", "uid": "", "t": ""}},
         HEARTBEAT: {"hexByte": 0x09, "command": {}},
     },
@@ -159,14 +165,14 @@ def pack_message(msg):
     """Pack a TuyaMessage into bytes."""
     # Create full message excluding CRC and suffix
     buffer = (
-            struct.pack(
-                MESSAGE_HEADER_FMT,
-                PREFIX_VALUE,
-                msg.seqno,
-                msg.cmd,
-                len(msg.payload) + struct.calcsize(MESSAGE_END_FMT),
-                )
-            + msg.payload
+        struct.pack(
+            MESSAGE_HEADER_FMT,
+            PREFIX_VALUE,
+            msg.seqno,
+            msg.cmd,
+            len(msg.payload) + struct.calcsize(MESSAGE_END_FMT),
+        )
+        + msg.payload
     )
 
     # Calculate CRC, add it together with suffix
@@ -344,7 +350,9 @@ class EmptyListener(TuyaListener):
 class TuyaProtocol(asyncio.Protocol, ContextualLogger):
     """Implementation of the Tuya protocol."""
 
-    def __init__(self, dev_id, local_key, protocol_version, client_id, on_connected, listener):
+    def __init__(
+        self, dev_id, local_key, protocol_version, client_id, on_connected, listener
+    ):
         """
         Initialize a new TuyaInterface.
 
@@ -379,7 +387,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             decoded_message = self._decode_payload(msg.payload)
             if "dps" in decoded_message:
                 self.dps_cache.update(decoded_message["dps"])
-
+            if "cid" in decoded_message:
+                if self.client_id is None:
+                    # initial setup
+                    self.client_id = decoded_message["cid"]
+                elif self.client_id != decoded_message["cid"]:
+                    # each time we got message, check if this is for me
+                    return
             listener = self.listener and self.listener()
             if listener is not None:
                 listener.status_updated(self.dps_cache)
@@ -554,7 +568,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             payload = self.cipher.decrypt(payload[16:])
         elif self.version == 3.3:
             if self.dev_type != TYPE_0A or payload.startswith(
-                    PROTOCOL_VERSION_BYTES_33
+                PROTOCOL_VERSION_BYTES_33
             ):
                 payload = payload[len(PROTOCOL_33_HEADER) :]
             payload = self.cipher.decrypt(payload, False)
@@ -616,20 +630,20 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         elif command == SET:
             payload = self.cipher.encrypt(payload)
             to_hash = (
-                    b"data="
-                    + payload
-                    + b"||lpv="
-                    + PROTOCOL_VERSION_BYTES_31
-                    + b"||"
-                    + self.local_key
+                b"data="
+                + payload
+                + b"||lpv="
+                + PROTOCOL_VERSION_BYTES_31
+                + b"||"
+                + self.local_key
             )
             hasher = md5()
             hasher.update(to_hash)
             hexdigest = hasher.hexdigest()
             payload = (
-                    PROTOCOL_VERSION_BYTES_31
-                    + hexdigest[8:][:16].encode("latin1")
-                    + payload
+                PROTOCOL_VERSION_BYTES_31
+                + hexdigest[8:][:16].encode("latin1")
+                + payload
             )
 
         msg = TuyaMessage(self.seqno, command_hb, 0, payload, 0)
@@ -642,14 +656,14 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
 
 async def connect(
-        address,
-        device_id,
-        client_id,
-        local_key,
-        protocol_version,
-        listener=None,
-        port=6668,
-        timeout=5,
+    address,
+    device_id,
+    client_id,
+    local_key,
+    protocol_version,
+    listener=None,
+    port=6668,
+    timeout=5,
 ):
     """Connect to a device."""
     loop = asyncio.get_running_loop()
@@ -662,7 +676,7 @@ async def connect(
             client_id,
             on_connected,
             listener or EmptyListener(),
-            ),
+        ),
         address,
         port,
     )

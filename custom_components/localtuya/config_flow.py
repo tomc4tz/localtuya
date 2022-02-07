@@ -14,6 +14,7 @@ from homeassistant.const import (
     CONF_HOST,
     CONF_ID,
     CONF_PLATFORM,
+    CONF_CLIENT_ID,
 )
 from homeassistant.core import callback
 
@@ -43,6 +44,7 @@ BASIC_INFO_SCHEMA = vol.Schema(
         vol.Required(CONF_LOCAL_KEY): str,
         vol.Required(CONF_HOST): str,
         vol.Required(CONF_DEVICE_ID): str,
+        vol.Optional(CONF_CLIENT_ID): str,
         vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
     }
 )
@@ -52,6 +54,7 @@ DEVICE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): cv.string,
         vol.Required(CONF_DEVICE_ID): cv.string,
+        vol.Optional(CONF_CLIENT_ID): cv.string,
         vol.Required(CONF_LOCAL_KEY): cv.string,
         vol.Required(CONF_FRIENDLY_NAME): cv.string,
         vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
@@ -181,10 +184,14 @@ async def validate_input(hass: core.HomeAssistant, data):
     detected_dps = {}
 
     interface = None
+    if CONF_CLIENT_ID not in data:
+        data[CONF_CLIENT_ID] = None
+
     try:
         interface = await pytuya.connect(
             data[CONF_HOST],
             data[CONF_DEVICE_ID],
+            data[CONF_CLIENT_ID],
             data[CONF_LOCAL_KEY],
             float(data[CONF_PROTOCOL_VERSION]),
         )
@@ -269,14 +276,13 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             await self.async_set_unique_id(user_input[CONF_DEVICE_ID])
-
             try:
                 self.basic_info = user_input
                 if self.selected_device is not None:
                     self.basic_info[CONF_PRODUCT_KEY] = self.devices[
                         self.selected_device
                     ]["productKey"]
-                self.dps_strings = await validate_input(self.hass, user_input)
+                self.dps_strings = await validate_input(self.hass, self.basic_info)
                 return await self.async_step_pick_entity_type()
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -284,7 +290,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except EmptyDpsList:
                 errors["base"] = "empty_dps"
-            except Exception:  # pylint: disable=broad-except
+            except Exception as ex:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
 

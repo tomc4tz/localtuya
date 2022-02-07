@@ -20,6 +20,7 @@
                     "device_id": "Device ID",
                     "local_key": "Local key",
                     "protocol_version": "Protocol Version",
+                    "client_id": "Client Id",
                     "device_type": "Device type"
                 }
             },

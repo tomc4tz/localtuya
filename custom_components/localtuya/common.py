@@ -9,6 +9,7 @@ from homeassistant.const import (
     CONF_HOST,
     CONF_ID,
     CONF_PLATFORM,
+    CONF_CLIENT_ID,
 )
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import (
@@ -139,14 +140,16 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self._interface = await pytuya.connect(
                 self._config_entry[CONF_HOST],
                 self._config_entry[CONF_DEVICE_ID],
+                self._config_entry.get(CONF_CLIENT_ID),
                 self._config_entry[CONF_LOCAL_KEY],
                 float(self._config_entry[CONF_PROTOCOL_VERSION]),
-                self,
+                listener=self,
             )
             self._interface.add_dps_to_request(self.dps_to_request)
 
             self.debug("Retrieving initial state")
             status = await self._interface.status()
+
             if status is None:
                 raise Exception("Failed to retrieve status")
 
@@ -195,7 +198,6 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     def status_updated(self, status):
         """Device updated status."""
         self._status.update(status)
-
         signal = f"localtuya_{self._config_entry[CONF_DEVICE_ID]}"
         async_dispatcher_send(self._hass, signal, self._status)
 

@@ -29,6 +29,7 @@
                     "host": "Host",
                     "device_id": "Device ID",
                     "local_key": "Local key",
+                    "client_id": "Client Id",
                     "protocol_version": "Protocol Version"
                 }
             },
