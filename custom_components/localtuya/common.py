@@ -317,7 +317,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             # Re-add and get status of previously added sub-devices
             for cid in self._sub_devices:
                 self._interface.add_sub_device(cid)
-                self._interface.add_dps_to_request(self._sub_devices[cid])
+                self._interface.add_dps_to_request(self._sub_devices[cid], cid)
                 self._dispatch_event(GW_EVT_CONNECTED, None, cid)
 
                 # Initial status update
