@@ -21,6 +21,7 @@ Functions
    json = status()          # returns json payload
    set_version(version)     #  3.1 [default] or 3.3
    detect_available_dps()   # returns a list of available dps provided by the device
+   update_dps(dps)          # sends update dps command
    add_dps_to_request(dp_index)  # adds dp_index to the list of dps used by the
                                   # device (to be queried in the payload)
    set_dp(on, dp_index)   # Set value of any dps index.
@@ -61,6 +62,7 @@ TuyaMessage = namedtuple("TuyaMessage", "seqno cmd retcode payload crc")
 SET = "set"
 STATUS = "status"
 HEARTBEAT = "heartbeat"
+UPDATEDPS = "updatedps"  # Request refresh of DPS
 
 PROTOCOL_VERSION_BYTES_31 = b"3.1"
 PROTOCOL_VERSION_BYTES_33 = b"3.3"
@@ -76,13 +78,17 @@ SUFFIX_VALUE = 0x0000AA55
 
 HEARTBEAT_INTERVAL = 10
 
+# DPS that are known to be safe to use with update_dps (0x12) command
+UPDATE_DPS_WHITELIST = [18, 19, 20]  # Socket (Wi-Fi)
 TYPE_0A = "type_0a"  # DP_QUERY
 TYPE_0D = "type_0d"  # CONTROL_NEW
 
 COMMAND_DP_QUERY = 0x0A
 COMMAND_CONTROL_NEW = 0x0D
 COMMAND_SET = 0x07
+COMMAND_STATUS = 0x08
 COMMAND_HEARTBEAT = 0x09
+COMMAND_UPDATE_DPS = 0x12
 
 # This is intended to match requests.json payload at
 # https://github.com/codetheweb/tuyapi :
@@ -110,11 +116,13 @@ PAYLOAD_DICT = {
         STATUS: {"hexByte": COMMAND_DP_QUERY, "command": {"gwId": "", "devId": "", "uid": ""}},
         SET: {"hexByte": COMMAND_SET, "command": {"devId": "", "uid": "", "t": ""}},
         HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
+        UPDATEDPS: {"hexByte": COMMAND_UPDATE_DPS, "command": {"dpId": [18, 19, 20]}},
     },
     TYPE_0D: {
         STATUS: {"hexByte": COMMAND_CONTROL_NEW, "command": {"devId": "", "uid": "", "t": ""}},
         SET: {"hexByte": COMMAND_SET, "command": {"devId": "", "uid": "", "t": ""}},
         HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
+        UPDATEDPS: {"hexByte": COMMAND_UPDATE_DPS, "command": {"dpId": [18, 19, 20]}},
     },
 }
 
@@ -164,14 +172,14 @@ def pack_message(msg):
     """Pack a TuyaMessage into bytes."""
     # Create full message excluding CRC and suffix
     buffer = (
-            struct.pack(
-                MESSAGE_HEADER_FMT,
-                PREFIX_VALUE,
-                msg.seqno,
-                msg.cmd,
-                len(msg.payload) + struct.calcsize(MESSAGE_END_FMT),
-                )
-            + msg.payload
+        struct.pack(
+            MESSAGE_HEADER_FMT,
+            PREFIX_VALUE,
+            msg.seqno,
+            msg.cmd,
+            len(msg.payload) + struct.calcsize(MESSAGE_END_FMT),
+            )
+        + msg.payload
     )
 
     # Calculate CRC, add it together with suffix
@@ -306,13 +314,15 @@ class MessageDispatcher(ContextualLogger):
             sem = self.listeners[msg.seqno]
             self.listeners[msg.seqno] = msg
             sem.release()
-        elif msg.cmd == 0x09:
+        elif msg.cmd == COMMAND_HEARTBEAT:
             self.debug("Got heartbeat response")
             if self.HEARTBEAT_SEQNO in self.listeners:
                 sem = self.listeners[self.HEARTBEAT_SEQNO]
                 self.listeners[self.HEARTBEAT_SEQNO] = msg
                 sem.release()
-        elif msg.cmd == 0x08:
+        elif msg.cmd == COMMAND_UPDATE_DPS:
+            self.debug("Got normal updatedps response")
+        elif msg.cmd == COMMAND_STATUS:
             self.debug("Got status update")
             self.listener(msg)
         else:
@@ -508,6 +518,26 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         """Send a heartbeat message."""
         return await self.exchange(HEARTBEAT)
 
+    async def update_dps(self, dps=None):
+        """
+        Request device to update index.
+
+        Args:
+            dps([int]): list of dps to update, default=detected&whitelisted
+        """
+        if self.version == 3.3:
+            if dps is None:
+                if not self.dps_cache:
+                    await self.detect_available_dps()
+                if self.dps_cache:
+                    dps = [int(dp) for dp in self.dps_cache]
+                    # filter non whitelisted dps
+                    dps = list(set(dps).intersection(set(UPDATE_DPS_WHITELIST)))
+            self.debug("updatedps() entry (dps %s, dps_cache %s)", dps, self.dps_cache)
+            payload = self._generate_payload(UPDATEDPS, dps)
+            self.transport.write(payload)
+        return True
+
     async def set_dp(self, value, dp_index, cid=None):
         """
         Set value (may be any type: bool, int or string) of any dps index.
@@ -515,6 +545,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         Args:
             dp_index(int):   dps index to set
             value: new value for the dps index
+            cid: Client ID of sub-device
         """
         if self.is_gateway:
             if not cid:
@@ -695,7 +726,11 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             json_data["t"] = str(int(time.time()))
 
         if data is not None:
-            json_data["dps"] = data
+            if "dpId" in json_data:
+                json_data["dpId"] = data
+            else:
+                json_data["dps"] = data
+
         elif command_hb == COMMAND_CONTROL_NEW:
             if self.is_gateway:
                 json_data["dps"] = self.dps_to_request[cid]
@@ -707,26 +742,26 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
         if self.version == 3.3:
             payload = self.cipher.encrypt(payload, False)
-            if command_hb != COMMAND_DP_QUERY:
+            if command_hb not in [COMMAND_DP_QUERY, COMMAND_UPDATE_DPS]:
                 # add the 3.3 header
                 payload = PROTOCOL_33_HEADER + payload
         elif command == SET:
             payload = self.cipher.encrypt(payload)
             to_hash = (
-                    b"data="
-                    + payload
-                    + b"||lpv="
-                    + PROTOCOL_VERSION_BYTES_31
-                    + b"||"
-                    + self.local_key
+                b"data="
+                + payload
+                + b"||lpv="
+                + PROTOCOL_VERSION_BYTES_31
+                + b"||"
+                + self.local_key
             )
             hasher = md5()
             hasher.update(to_hash)
             hexdigest = hasher.hexdigest()
             payload = (
-                    PROTOCOL_VERSION_BYTES_31
-                    + hexdigest[8:][:16].encode("latin1")
-                    + payload
+                PROTOCOL_VERSION_BYTES_31
+                + hexdigest[8:][:16].encode("latin1")
+                + payload
             )
 
         msg = TuyaMessage(self.seqno, command_hb, 0, payload, 0)
@@ -754,14 +789,14 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
 
 async def connect(
-        address,
-        device_id,
-        local_key,
-        protocol_version,
-        listener=None,
-        port=6668,
-        timeout=5,
-        is_gateway=False,
+    address,
+    device_id,
+    local_key,
+    protocol_version,
+    listener=None,
+    port=6668,
+    timeout=5,
+    is_gateway=False,
 ):
     """Connect to a device."""
     loop = asyncio.get_running_loop()
@@ -774,7 +809,7 @@ async def connect(
             on_connected,
             listener or EmptyListener(),
             is_gateway,
-            ),
+        ),
         address,
         port,
     )
