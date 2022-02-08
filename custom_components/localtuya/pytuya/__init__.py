@@ -105,11 +105,7 @@ GATEWAY_PAYLOAD_DICT = {
         SET: {"hexByte": COMMAND_SET, "command": {"cid": "", "t": ""}},
         HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
     },
-    TYPE_0D: {
-        STATUS: {"hexByte": COMMAND_CONTROL_NEW, "command": {"cid": ""}},
-        SET: {"hexByte": COMMAND_SET, "command": {"cid": "", "t": ""}},
-        HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
-    }
+    # TYPE_0D should never be used with gateways
 }
 PAYLOAD_DICT = {
     TYPE_0A: {
@@ -172,14 +168,14 @@ def pack_message(msg):
     """Pack a TuyaMessage into bytes."""
     # Create full message excluding CRC and suffix
     buffer = (
-        struct.pack(
-            MESSAGE_HEADER_FMT,
-            PREFIX_VALUE,
-            msg.seqno,
-            msg.cmd,
-            len(msg.payload) + struct.calcsize(MESSAGE_END_FMT),
-            )
-        + msg.payload
+            struct.pack(
+                MESSAGE_HEADER_FMT,
+                PREFIX_VALUE,
+                msg.seqno,
+                msg.cmd,
+                len(msg.payload) + struct.calcsize(MESSAGE_END_FMT),
+                )
+            + msg.payload
     )
 
     # Calculate CRC, add it together with suffix
@@ -508,11 +504,14 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                 raise Exception("Unexpected sub-device cid", cid)
 
             status = await self.exchange(STATUS, cid=cid)
+            if not status:  # Happens when there's an error in decoding
+                return None
         else:
             status = await self.exchange(STATUS)
 
         self._update_dps_cache(status)
         return self.dps_cache
+
 
     async def heartbeat(self):
         """Send a heartbeat message."""
@@ -674,11 +673,12 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             payload = self.cipher.decrypt(payload, False)
 
             if "data unvalid" in payload:
-                self.dev_type = TYPE_0D
-                self.debug(
-                    "switching to dev_type %s",
-                    self.dev_type,
-                )
+                if not self.is_gateway:  # json data unvalid for gateway really means sub-device not connected
+                    self.dev_type = TYPE_0D
+                    self.debug(
+                        "switching to dev_type %s",
+                        self.dev_type,
+                    )
                 return None
         else:
             raise Exception(f"Unexpected payload={payload}")
@@ -730,12 +730,8 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                 json_data["dpId"] = data
             else:
                 json_data["dps"] = data
-
         elif command_hb == COMMAND_CONTROL_NEW:
-            if self.is_gateway:
-                json_data["dps"] = self.dps_to_request[cid]
-            else:
-                json_data["dps"] = self.dps_to_request
+            json_data["dps"] = self.dps_to_request
 
         payload = json.dumps(json_data).replace(" ", "").encode("utf-8")
         self.debug("Send payload: %s", payload)
@@ -748,20 +744,20 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         elif command == SET:
             payload = self.cipher.encrypt(payload)
             to_hash = (
-                b"data="
-                + payload
-                + b"||lpv="
-                + PROTOCOL_VERSION_BYTES_31
-                + b"||"
-                + self.local_key
+                    b"data="
+                    + payload
+                    + b"||lpv="
+                    + PROTOCOL_VERSION_BYTES_31
+                    + b"||"
+                    + self.local_key
             )
             hasher = md5()
             hasher.update(to_hash)
             hexdigest = hasher.hexdigest()
             payload = (
-                PROTOCOL_VERSION_BYTES_31
-                + hexdigest[8:][:16].encode("latin1")
-                + payload
+                    PROTOCOL_VERSION_BYTES_31
+                    + hexdigest[8:][:16].encode("latin1")
+                    + payload
             )
 
         msg = TuyaMessage(self.seqno, command_hb, 0, payload, 0)
@@ -789,14 +785,14 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
 
 async def connect(
-    address,
-    device_id,
-    local_key,
-    protocol_version,
-    listener=None,
-    port=6668,
-    timeout=5,
-    is_gateway=False,
+        address,
+        device_id,
+        local_key,
+        protocol_version,
+        listener=None,
+        port=6668,
+        timeout=5,
+        is_gateway=False,
 ):
     """Connect to a device."""
     loop = asyncio.get_running_loop()
@@ -809,7 +805,7 @@ async def connect(
             on_connected,
             listener or EmptyListener(),
             is_gateway,
-        ),
+            ),
         address,
         port,
     )

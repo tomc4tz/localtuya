@@ -37,6 +37,9 @@ from .const import (
     GW_EVT_STATUS_UPDATED,
     GW_EVT_CONNECTED,
     GW_EVT_DISCONNECTED,
+    SUB_DEVICE_RECONNECT_INTERVAL,
+    SUB_DEVICE_DISPATCH_RETRY_MAX,
+    SUB_DEVICE_DISPATCH_RETRY_INTERVAL,
     TUYA_DEVICE,
 )
 
@@ -275,6 +278,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._is_closing = False
         self._connect_task = None
         self._disconnect_task = None
+        self._retry_sub_conn_interval = None
         self._sub_devices = {}
         self.set_logger(_LOGGER, config_entry[CONF_DEVICE_ID])
 
@@ -316,13 +320,17 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
             # Re-add and get status of previously added sub-devices
             for cid in self._sub_devices:
-                self._interface.add_sub_device(cid)
-                self._interface.add_dps_to_request(self._sub_devices[cid], cid)
+                self._add_sub_device_interface(cid, self._sub_devices[cid]["dps"])
                 self._dispatch_event(GW_EVT_CONNECTED, None, cid)
 
                 # Initial status update
-                status = await self._interface.status(cid)
-                self.status_updated(status)
+                await self._get_sub_device_status(cid, False)
+
+            self._retry_sub_conn_interval = async_track_time_interval(
+                self._hass,
+                self._retry_sub_device_connection,
+                timedelta(seconds=SUB_DEVICE_RECONNECT_INTERVAL)
+            )
 
         except Exception:  # pylint: disable=broad-except
             self.exception(f"Connect to gateway {self._config_entry[CONF_HOST]} failed")
@@ -344,13 +352,11 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             if cid in self._sub_devices:
                 self.warning("Duplicate sub-device addition for %s", cid)
             else:
-                self._sub_devices[cid] = content["dps"]
-                self._interface.add_sub_device(cid)
-                self._interface.add_dps_to_request(content["dps"], cid)
+                self._sub_devices[cid] = {"dps": content["dps"], "retry_status": False}
+                self._add_sub_device_interface(cid, content["dps"])
                 self._dispatch_event(GW_EVT_CONNECTED, None, cid)
                 # Initial status update
-                status = await self._interface.status(cid)
-                self.status_updated(status)
+                await self._get_sub_device_status(cid, False)
         elif request == GW_REQ_REMOVE:
             if cid not in self._sub_devices:
                 self.warning("Invalid sub-device removal request for %s", cid)
@@ -368,6 +374,22 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         else:
             self.debug("Invalid request %s from %s", request, cid)
 
+    def _add_sub_device_interface(self, cid, dps):
+        self._interface.add_sub_device(cid)
+        self._interface.add_dps_to_request(dps, cid)
+
+    async def _get_sub_device_status(self, cid, is_retry):
+        status = await self._interface.status(cid)
+        if status:
+            self.status_updated(status)
+            self._sub_devices[cid]["retry_status"] = False
+            if is_retry:
+                self._dispatch_event(GW_EVT_CONNECTED, None, cid)
+        else:
+            self._sub_devices[cid]["retry_status"] = True
+            if not is_retry:
+                self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
+
     def _dispatch_event(self, event, event_data, cid):
         self.debug("Dispatching event %s to sub-device %s with data %s", event, cid, event_data)
 
@@ -379,6 +401,11 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 "event_data": event_data
             }
         )
+
+    async def _retry_sub_device_connection(self, _now):
+        for cid in self._sub_devices:
+            if self._sub_devices[cid]["retry_status"]:
+                await self._get_sub_device_status(cid, True)
 
     async def close(self):
         """Close connection and stop re-connect loop."""
@@ -403,6 +430,10 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     @callback
     def disconnected(self):
         """Device disconnected."""
+        if self._retry_sub_conn_interval is not None:
+            self._retry_sub_conn_interval()
+            self._retry_sub_conn_interval = None
+
         for cid in self._sub_devices:
             self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
 
@@ -519,7 +550,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             if not self._pending_request["request"]:
                 return
 
-            if self._pending_request["retry_count"] >= 3:
+            if self._pending_request["retry_count"] >= SUB_DEVICE_DISPATCH_RETRY_MAX:
                 self.debug("Request %s exceeded maximum retries", self._pending_request["request"])
                 self._pending_request["request"] = None
                 return
@@ -535,7 +566,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             )
 
             self._pending_request["retry_count"] += 1
-            await asyncio.sleep(5)
+            await asyncio.sleep(SUB_DEVICE_DISPATCH_RETRY_INTERVAL)
 
     async def set_dp(self, state, dp_index):
         """Change value of a DP of the Tuya device."""
