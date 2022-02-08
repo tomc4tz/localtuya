@@ -275,7 +275,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._is_closing = False
         self._connect_task = None
         self._disconnect_task = None
-        self._sub_devices = []
+        self._sub_devices = {}
         self.set_logger(_LOGGER, config_entry[CONF_DEVICE_ID])
 
         # Safety check
@@ -314,7 +314,10 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 self._hass, signal, self._handle_sub_device_request
             )
 
+            # Re-add and get status of previously added sub-devices
             for cid in self._sub_devices:
+                self._interface.add_sub_device(cid)
+                self._interface.add_dps_to_request(self._sub_devices[cid])
                 self._dispatch_event(GW_EVT_CONNECTED, None, cid)
 
                 # Initial status update
@@ -341,7 +344,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             if cid in self._sub_devices:
                 self.warning("Duplicate sub-device addition for %s", cid)
             else:
-                self._sub_devices.append(cid)
+                self._sub_devices[cid] = content["dps"]
                 self._interface.add_sub_device(cid)
                 self._interface.add_dps_to_request(content["dps"], cid)
                 self._dispatch_event(GW_EVT_CONNECTED, None, cid)
@@ -352,7 +355,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             if cid not in self._sub_devices:
                 self.warning("Invalid sub-device removal request for %s", cid)
             else:
-                self._sub_devices.remove(cid)
+                del self._sub_devices[cid]
                 self._interface.remove_sub_device(cid)
                 self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
         elif request == GW_REQ_STATUS:
