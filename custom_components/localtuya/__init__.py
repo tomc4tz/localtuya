@@ -6,10 +6,12 @@ are pre-filled for optional fields):
 localtuya:
   - host: 192.168.1.x
     device_id: xxxxx
-    local_key: xxxxx
+    local_key: xxxxx # Optional
     friendly_name: Tuya Device
     protocol_version: "3.3"
-    entities:
+    is_gateway: false # Optional
+    parent_gateway: xxxxx # Optional
+    entities: # Optional
       - platform: binary_sensor
         friendly_name: Plug Status
         id: 1
@@ -76,9 +78,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.reload import async_integration_yaml_config
 
-from .common import TuyaDevice, async_config_entry_by_device_id
+from .common import TuyaDevice, TuyaGatewayDevice, TuyaSubDevice, async_config_entry_by_device_id
 from .config_flow import config_schema
-from .const import CONF_PRODUCT_KEY, DATA_DISCOVERY, DOMAIN, TUYA_DEVICE
+from .const import CONF_PRODUCT_KEY, CONF_IS_GATEWAY, CONF_PARENT_GATEWAY, DATA_DISCOVERY, DOMAIN, TUYA_DEVICE
 from .discovery import TuyaDiscovery
 
 _LOGGER = logging.getLogger(__name__)
@@ -246,26 +248,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up LocalTuya integration from a config entry."""
     unsub_listener = entry.add_update_listener(update_listener)
 
-    device = TuyaDevice(hass, entry.data)
+    if entry.data.get(CONF_IS_GATEWAY):
+        device = TuyaGatewayDevice(hass, entry.data)
+    elif not entry.data.get(CONF_IS_GATEWAY) and entry.data.get(CONF_PARENT_GATEWAY):
+        device = TuyaSubDevice(hass, entry.data)
+    else:
+        device = TuyaDevice(hass, entry.data)
 
     hass.data[DOMAIN][entry.entry_id] = {
         UNSUB_LISTENER: unsub_listener,
         TUYA_DEVICE: device,
     }
 
-    async def setup_entities():
-        platforms = set(entity[CONF_PLATFORM] for entity in entry.data[CONF_ENTITIES])
-        await asyncio.gather(
-            *[
-                hass.config_entries.async_forward_entry_setup(entry, platform)
-                for platform in platforms
-            ]
-        )
-        device.async_connect()
+    if not entry.data.get(CONF_IS_GATEWAY):
+        async def setup_entities():
+            platforms = set(entity[CONF_PLATFORM] for entity in entry.data[CONF_ENTITIES])
+            await asyncio.gather(
+                *[
+                    hass.config_entries.async_forward_entry_setup(entry, platform)
+                    for platform in platforms
+                ]
+            )
+            device.async_connect()
 
-    await async_remove_orphan_entities(hass, entry)
+        await async_remove_orphan_entities(hass, entry)
 
-    hass.async_create_task(setup_entities())
+        hass.async_create_task(setup_entities())
 
     return True
 

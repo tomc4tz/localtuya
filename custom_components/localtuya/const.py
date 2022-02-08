@@ -8,6 +8,8 @@ CONF_LOCAL_KEY = "local_key"
 CONF_PROTOCOL_VERSION = "protocol_version"
 CONF_DPS_STRINGS = "dps_strings"
 CONF_PRODUCT_KEY = "product_key"
+CONF_IS_GATEWAY = "is_gateway"
+CONF_PARENT_GATEWAY = "parent_gateway"
 
 # light
 CONF_BRIGHTNESS_LOWER = "brightness_lower"
@@ -57,5 +59,16 @@ PLATFORMS = [
     "sensor",
     "switch",
 ]
+
+# gateway & sub-device
+GW_REQ_ADD = "request_add"
+GW_REQ_REMOVE = "request_remove"
+GW_REQ_STATUS = "request_status"
+GW_REQ_SET_DP = "request_set_dp"
+GW_REQ_SET_DPS = "request_set_dps"
+GW_EVT_REQ_ACK = "request_acknowledged"
+GW_EVT_STATUS_UPDATED = "event_status_updated"
+GW_EVT_CONNECTED = "event_connected"
+GW_EVT_DISCONNECTED = "event_disconnected"
 
 TUYA_DEVICE = "tuya_device"

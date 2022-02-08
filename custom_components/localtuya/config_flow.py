@@ -23,6 +23,8 @@ from .const import (
     CONF_LOCAL_KEY,
     CONF_PRODUCT_KEY,
     CONF_PROTOCOL_VERSION,
+    CONF_IS_GATEWAY,
+    CONF_PARENT_GATEWAY,
     DATA_DISCOVERY,
     DOMAIN,
     PLATFORMS,
@@ -50,12 +52,14 @@ BASIC_INFO_SCHEMA = vol.Schema(
 
 DEVICE_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_HOST): cv.string,
         vol.Required(CONF_DEVICE_ID): cv.string,
-        vol.Required(CONF_LOCAL_KEY): cv.string,
         vol.Required(CONF_FRIENDLY_NAME): cv.string,
         vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
-    }
+        vol.Optional(CONF_IS_GATEWAY): cv.boolean,
+        vol.Optional(CONF_PARENT_GATEWAY): cv.string,
+        vol.Optional(CONF_HOST): cv.string,
+        vol.Optional(CONF_LOCAL_KEY): cv.string,
+    },
 )
 
 PICK_ENTITY_SCHEMA = vol.Schema(
@@ -156,6 +160,21 @@ def strip_dps_values(user_input, dps_strings):
     return stripped
 
 
+def validate_config_schema(config):
+    """Valid configuration schema to ensure proper values have been declared"""
+    for device in config:
+        if device.get(CONF_PARENT_GATEWAY):
+            if device.get(CONF_IS_GATEWAY):
+                raise vol.Invalid("Sub-device declared as gateway device at the same time")
+        else:
+            if not device.get(CONF_HOST):
+                raise vol.Invalid("Host not specified")
+            elif not device.get(CONF_LOCAL_KEY):
+                raise vol.Invalid("Local key not specified")
+
+    return config
+
+
 def config_schema():
     """Build schema used for setting up component."""
     entity_schemas = [
@@ -167,9 +186,12 @@ def config_schema():
                 cv.ensure_list,
                 [
                     DEVICE_SCHEMA.extend(
-                        {vol.Required(CONF_ENTITIES): [vol.Any(*entity_schemas)]}
-                    )
+                        {
+                            vol.Optional(CONF_ENTITIES): [vol.Any(*entity_schemas)]
+                        },
+                    ),
                 ],
+                validate_config_schema,
             )
         },
         extra=vol.ALLOW_EXTRA,
