@@ -92,21 +92,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.reload import async_integration_yaml_config
 
-from .common import (
-    TuyaDevice,
-    TuyaGatewayDevice,
-    TuyaSubDevice,
-    async_config_entry_by_device_id,
-)
+from .common import TuyaDevice, TuyaGatewayDevice, TuyaSubDevice, async_config_entry_by_device_id
 from .config_flow import config_schema
-from .const import (
-    CONF_PRODUCT_KEY,
-    CONF_IS_GATEWAY,
-    CONF_PARENT_GATEWAY,
-    DATA_DISCOVERY,
-    DOMAIN,
-    TUYA_DEVICE,
-)
+from .const import CONF_PRODUCT_KEY, CONF_IS_GATEWAY, CONF_PARENT_GATEWAY, DATA_DISCOVERY, DOMAIN, TUYA_DEVICE
 from .discovery import TuyaDiscovery
 
 _LOGGER = logging.getLogger(__name__)
@@ -287,7 +275,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     }
 
     if not entry.data.get(CONF_IS_GATEWAY):
-
         async def setup_entities():
             platforms = set(
                 entity[CONF_PLATFORM] for entity in entry.data[CONF_ENTITIES]

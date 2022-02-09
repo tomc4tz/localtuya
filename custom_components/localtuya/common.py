@@ -292,10 +292,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
         # Safety check
         if not config_entry.get(CONF_IS_GATEWAY):
-            raise Exception(
-                "Device {0} is not a gateway but using TuyaGatewayDevice!",
-                config_entry[CONF_DEVICE_ID],
-            )
+            raise Exception("Device {0} is not a gateway but using TuyaGatewayDevice!", config_entry[CONF_DEVICE_ID])
 
     @property
     def connected(self):
@@ -401,14 +398,15 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
 
     def _dispatch_event(self, event, event_data, cid):
-        self.debug(
-            "Dispatching event %s to sub-device %s with data %s", event, cid, event_data
-        )
+        self.debug("Dispatching event %s to sub-device %s with data %s", event, cid, event_data)
 
         async_dispatcher_send(
             self._hass,
             f"localtuya_subdevice_{cid}",
-            {"event": event, "event_data": event_data},
+            {
+                "event": event,
+                "event_data": event_data
+            }
         )
 
     async def _retry_sub_device_connection(self, _now):
@@ -471,10 +469,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
         # Safety check
         if not config_entry.get(CONF_PARENT_GATEWAY):
-            raise Exception(
-                "Device {0} is not a sub-device but using TuyaSubDevice!",
-                config_entry[CONF_DEVICE_ID],
-            )
+            raise Exception("Device {0} is not a sub-device but using TuyaSubDevice!", config_entry[CONF_DEVICE_ID])
 
         # Populate dps list from entities
         for entity in config_entry[CONF_ENTITIES]:
@@ -512,9 +507,9 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 self._hass, signal, _new_entity_handler
             )
 
-            self._async_dispatch_gateway_request(
-                GW_REQ_ADD, {"dps": self.dps_to_request}
-            )
+            self._async_dispatch_gateway_request(GW_REQ_ADD, {
+                "dps": self.dps_to_request
+            })
 
             self._is_added = True
 
@@ -541,9 +536,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self.debug("Invalid event %s from gateway", event)
 
     def _async_dispatch_gateway_request(self, request, content):
-        self.debug(
-            "Dispatching request %s to gateway with content %s", request, content
-        )
+        self.debug("Dispatching request %s to gateway with content %s", request, content)
         asyncio.create_task(self._gateway_request_task(request, content))
 
     async def _gateway_request_task(self, request, content):
@@ -565,10 +558,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 return
 
             if self._pending_request["retry_count"] >= SUB_DEVICE_DISPATCH_RETRY_MAX:
-                self.debug(
-                    "Request %s exceeded maximum retries",
-                    self._pending_request["request"],
-                )
+                self.debug("Request %s exceeded maximum retries", self._pending_request["request"])
                 self._pending_request["request"] = None
                 return
 
@@ -588,13 +578,10 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def set_dp(self, state, dp_index):
         """Change value of a DP of the Tuya device."""
         if self._is_connected:
-            self._async_dispatch_gateway_request(
-                GW_REQ_SET_DP,
-                {
-                    "value": state,
-                    "dp_index": dp_index,
-                },
-            )
+            self._async_dispatch_gateway_request(GW_REQ_SET_DP, {
+                "value": state,
+                "dp_index": dp_index,
+            })
         else:
             self.error(
                 "Not connected to device %s", self._config_entry[CONF_FRIENDLY_NAME]
@@ -603,12 +590,9 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def set_dps(self, states):
         """Change value of DPs of the Tuya device."""
         if self._is_connected:
-            self._async_dispatch_gateway_request(
-                GW_REQ_SET_DPS,
-                {
-                    "dps": states,
-                },
-            )
+            self._async_dispatch_gateway_request(GW_REQ_SET_DPS, {
+                "dps": states,
+            })
         else:
             self.error(
                 "Not connected to device %s", self._config_entry[CONF_FRIENDLY_NAME]

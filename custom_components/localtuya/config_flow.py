@@ -169,9 +169,7 @@ def validate_config_schema(config):
     for device in config:
         if device.get(CONF_PARENT_GATEWAY):
             if device.get(CONF_IS_GATEWAY):
-                raise vol.Invalid(
-                    "Sub-device declared as gateway device at the same time"
-                )
+                raise vol.Invalid("Sub-device declared as gateway device at the same time")
         else:
             if not device.get(CONF_HOST):
                 raise vol.Invalid("Host not specified")
@@ -192,7 +190,9 @@ def config_schema():
                 cv.ensure_list,
                 [
                     DEVICE_SCHEMA.extend(
-                        {vol.Optional(CONF_ENTITIES): [vol.Any(*entity_schemas)]},
+                        {
+                            vol.Optional(CONF_ENTITIES): [vol.Any(*entity_schemas)]
+                        },
                     ),
                 ],
                 validate_config_schema,
