@@ -312,6 +312,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 async def update_listener(hass, config_entry):
     """Update listener."""
     await hass.config_entries.async_reload(config_entry.entry_id)
+    return True
 
 
 async def async_remove_orphan_entities(hass, entry):
