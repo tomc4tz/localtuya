@@ -2,7 +2,6 @@
 import asyncio
 import logging
 from datetime import timedelta
-from time import sleep
 from homeassistant.config_entries import ConfigEntry
 
 from homeassistant.const import (
