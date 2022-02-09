@@ -291,6 +291,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         hass.async_create_task(setup_entities())
     return True
 
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Unload a config entry."""
+    unload_ok = all(
+        await asyncio.gather(
+            *[
+                hass.config_entries.async_forward_entry_unload(entry, component)
+                for component in set(
+                    entity[CONF_PLATFORM] for entity in entry.data[CONF_ENTITIES]
+                )
+            ]
+        )
+    )
+
+    hass.data[DOMAIN][entry.entry_id][UNSUB_LISTENER]()
+    await hass.data[DOMAIN][entry.entry_id][TUYA_DEVICE].close()
+    if unload_ok:
+        hass.data[DOMAIN].pop(entry.entry_id)
 
 async def update_listener(hass, config_entry):
     """Update listener."""
