@@ -406,7 +406,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         """Initialize localtuya options flow."""
         self.config_entry = config_entry
         self.dps_strings = config_entry.data.get(CONF_DPS_STRINGS, gen_dps_strings())
-        self.entities = config_entry.data[CONF_ENTITIES]
+        if not config_entry.data.get(CONF_IS_GATEWAY):
+            self.entities = config_entry.data[CONF_ENTITIES]
         self.data = None
 
     async def async_step_init(self, user_input=None):

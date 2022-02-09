@@ -355,6 +355,7 @@ class EmptyListener(TuyaListener):
 class TuyaProtocol(asyncio.Protocol, ContextualLogger):
     """Implementation of the Tuya protocol."""
 
+
     def __init__(self, dev_id, local_key, protocol_version, on_connected, listener, is_gateway):
         """
         Initialize a new TuyaInterface.
@@ -387,15 +388,15 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         self.sub_devices = []
 
     def _setup_dispatcher(self):
-        def _status_update(msg):
-            decoded_message = self._decode_payload(msg.payload)
-            self._update_dps_cache(decoded_message)
+        return MessageDispatcher(self.id, self._status_update)
 
-            listener = self.listener and self.listener()
-            if listener is not None:
-                listener.status_updated(self.dps_cache)
+    def _status_update(self, msg):
+        decoded_message = self._decode_payload(msg.payload)
+        self._update_dps_cache(decoded_message)
 
-        return MessageDispatcher(self.id, _status_update)
+        listener = self.listener and self.listener()
+        if listener is not None:
+            listener.status_updated(self.dps_cache)
 
     def connection_made(self, transport):
         """Did connect to the device."""
@@ -551,7 +552,6 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                 raise Exception("Sub-device cid not specified for gateway")
             if cid not in self.sub_devices:
                 raise Exception("Unexpected sub-device cid", cid)
-
         return await self.exchange(SET, {str(dp_index): value}, cid)
 
     async def set_dps(self, dps, cid=None):
@@ -561,9 +561,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                 raise Exception("Sub-device cid not specified for gateway")
             if cid not in self.sub_devices:
                 raise Exception("Unexpected sub-device cid", cid)
-
         return await self.exchange(SET, dps, cid)
-
     async def detect_available_dps(self, cid=None):
         """Return which datapoints are supported by the device."""
 
@@ -619,7 +617,6 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
     def add_dps_to_request(self, dp_indicies, cid=None):
         """Add a datapoint (DP) to be included in requests."""
-
         if self.is_gateway:
             if not cid:
                 raise Exception("Sub-device cid not specified for gateway")
@@ -630,7 +627,6 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                 self.dps_to_request[cid][str(dp_indicies)] = None
             else:
                 self.dps_to_request[cid].update({str(index): None for index in dp_indicies})
-
         else:
             if isinstance(dp_indicies, int):
                 self.dps_to_request[str(dp_indicies)] = None
@@ -731,7 +727,10 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             else:
                 json_data["dps"] = data
         elif command_hb == COMMAND_CONTROL_NEW:
-            json_data["dps"] = self.dps_to_request
+            if cid:
+                json_data["dps"] = self.dps_to_request[cid]
+            else:
+                json_data["dps"] = self.dps_to_request
 
         payload = json.dumps(json_data).replace(" ", "").encode("utf-8")
         self.debug("Send payload: %s", payload)

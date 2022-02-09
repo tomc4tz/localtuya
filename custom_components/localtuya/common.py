@@ -2,6 +2,7 @@
 import asyncio
 import logging
 from datetime import timedelta
+from homeassistant.config_entries import ConfigEntry
 
 from homeassistant.const import (
     CONF_DEVICE_ID,
@@ -12,7 +13,9 @@ from homeassistant.const import (
     CONF_PLATFORM,
     CONF_SCAN_INTERVAL,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
@@ -62,7 +65,12 @@ def prepare_setup_entities(hass, config_entry, platform):
 
 
 async def async_setup_entry(
-    domain, entity_class, flow_schema, hass, config_entry, async_add_entities
+    domain: str,
+    entity_class: type,
+    flow_schema,
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ):
     """Set up a Tuya platform based on a config entry.
 
@@ -72,27 +80,26 @@ async def async_setup_entry(
     tuyainterface, entities_to_setup = prepare_setup_entities(
         hass, config_entry, domain
     )
+
     if not entities_to_setup:
         return
-
     dps_config_fields = list(get_dps_for_platform(flow_schema))
 
-    entities = []
     for device_config in entities_to_setup:
         # Add DPS used by this platform to the request list
         for dp_conf in dps_config_fields:
             if dp_conf in device_config:
                 tuyainterface.dps_to_request[device_config[dp_conf]] = None
-
-        entities.append(
-            entity_class(
-                tuyainterface,
-                config_entry,
-                device_config[CONF_ID],
-            )
+        async_add_entities(
+            [
+                entity_class(
+                    tuyainterface,
+                    config_entry,
+                    device_config[CONF_ID],
+                )
+            ],
+            True,
         )
-
-    async_add_entities(entities)
 
 
 def get_dps_for_platform(flow_schema):
@@ -276,7 +283,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._config_entry = config_entry
         self._interface = None
         self._is_closing = False
-        self._connect_task = None
+        self._connect_task = asyncio.create_task(self._make_connection())
         self._disconnect_task = None
         self._retry_sub_conn_interval = None
         self._sub_devices = {}
@@ -299,7 +306,6 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def _make_connection(self):
         """Subscribe localtuya entity events."""
         self.debug("Connecting to gateway %s", self._config_entry[CONF_HOST])
-
         try:
             self._interface = await pytuya.connect(
                 self._config_entry[CONF_HOST],
@@ -329,7 +335,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self._retry_sub_conn_interval = async_track_time_interval(
                 self._hass,
                 self._retry_sub_device_connection,
-                timedelta(seconds=SUB_DEVICE_RECONNECT_INTERVAL)
+                timedelta(seconds=SUB_DEVICE_RECONNECT_INTERVAL),
             )
 
         except Exception:  # pylint: disable=broad-except
@@ -537,7 +543,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self.debug(
                 "Unable to dispatch request %s due to pending request %s",
                 request,
-                self._pending_request["request"]
+                self._pending_request["request"],
             )
 
             return
@@ -562,7 +568,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                     "request": self._pending_request["request"],
                     "cid": self._config_entry[CONF_DEVICE_ID],
                     "content": self._pending_request["content"],
-                }
+                },
             )
 
             self._pending_request["retry_count"] += 1

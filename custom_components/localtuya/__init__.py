@@ -276,7 +276,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     if not entry.data.get(CONF_IS_GATEWAY):
         async def setup_entities():
-            platforms = set(entity[CONF_PLATFORM] for entity in entry.data[CONF_ENTITIES])
+            platforms = set(
+                entity[CONF_PLATFORM] for entity in entry.data[CONF_ENTITIES]
+            )
             await asyncio.gather(
                 *[
                     hass.config_entries.async_forward_entry_setup(entry, platform)
@@ -286,11 +288,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             device.async_connect()
 
         await async_remove_orphan_entities(hass, entry)
-
         hass.async_create_task(setup_entities())
-
     return True
-
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
@@ -310,9 +309,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
 
-    return True
-
-
+    return True    
 async def update_listener(hass, config_entry):
     """Update listener."""
     await hass.config_entries.async_reload(config_entry.entry_id)
