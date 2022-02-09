@@ -14,7 +14,6 @@ from homeassistant.const import (
     CONF_HOST,
     CONF_ID,
     CONF_PLATFORM,
-    CONF_CLIENT_ID,
     CONF_SCAN_INTERVAL,
 )
 from homeassistant.core import callback
@@ -25,6 +24,8 @@ from .const import (
     CONF_LOCAL_KEY,
     CONF_PRODUCT_KEY,
     CONF_PROTOCOL_VERSION,
+    CONF_IS_GATEWAY,
+    CONF_PARENT_GATEWAY,
     DATA_DISCOVERY,
     DOMAIN,
     PLATFORMS,
@@ -45,7 +46,6 @@ BASIC_INFO_SCHEMA = vol.Schema(
         vol.Required(CONF_LOCAL_KEY): str,
         vol.Required(CONF_HOST): str,
         vol.Required(CONF_DEVICE_ID): str,
-        vol.Optional(CONF_CLIENT_ID): str,
         vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
         vol.Optional(CONF_SCAN_INTERVAL): int,
     }
@@ -54,14 +54,15 @@ BASIC_INFO_SCHEMA = vol.Schema(
 
 DEVICE_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_HOST): cv.string,
         vol.Required(CONF_DEVICE_ID): cv.string,
-        vol.Optional(CONF_CLIENT_ID): cv.string,
-        vol.Required(CONF_LOCAL_KEY): cv.string,
         vol.Required(CONF_FRIENDLY_NAME): cv.string,
         vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
         vol.Optional(CONF_SCAN_INTERVAL): int,
-    }
+        vol.Optional(CONF_IS_GATEWAY): cv.boolean,
+        vol.Optional(CONF_PARENT_GATEWAY): cv.string,
+        vol.Optional(CONF_HOST): cv.string,
+        vol.Optional(CONF_LOCAL_KEY): cv.string,
+    },
 )
 
 PICK_ENTITY_SCHEMA = vol.Schema(
@@ -163,6 +164,23 @@ def strip_dps_values(user_input, dps_strings):
     return stripped
 
 
+def validate_config_schema(config):
+    """Valid configuration schema to ensure proper values have been declared"""
+    for device in config:
+        if device.get(CONF_PARENT_GATEWAY):
+            if device.get(CONF_IS_GATEWAY):
+                raise vol.Invalid(
+                    "Sub-device declared as gateway device at the same time"
+                )
+        else:
+            if not device.get(CONF_HOST):
+                raise vol.Invalid("Host not specified")
+            elif not device.get(CONF_LOCAL_KEY):
+                raise vol.Invalid("Local key not specified")
+
+    return config
+
+
 def config_schema():
     """Build schema used for setting up component."""
     entity_schemas = [
@@ -174,9 +192,10 @@ def config_schema():
                 cv.ensure_list,
                 [
                     DEVICE_SCHEMA.extend(
-                        {vol.Required(CONF_ENTITIES): [vol.Any(*entity_schemas)]}
-                    )
+                        {vol.Optional(CONF_ENTITIES): [vol.Any(*entity_schemas)]},
+                    ),
                 ],
+                validate_config_schema,
             )
         },
         extra=vol.ALLOW_EXTRA,
@@ -188,14 +207,10 @@ async def validate_input(hass: core.HomeAssistant, data):
     detected_dps = {}
 
     interface = None
-    if CONF_CLIENT_ID not in data:
-        data[CONF_CLIENT_ID] = None
-
     try:
         interface = await pytuya.connect(
             data[CONF_HOST],
             data[CONF_DEVICE_ID],
-            data[CONF_CLIENT_ID],
             data[CONF_LOCAL_KEY],
             float(data[CONF_PROTOCOL_VERSION]),
         )
@@ -280,13 +295,14 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             await self.async_set_unique_id(user_input[CONF_DEVICE_ID])
+
             try:
                 self.basic_info = user_input
                 if self.selected_device is not None:
                     self.basic_info[CONF_PRODUCT_KEY] = self.devices[
                         self.selected_device
                     ]["productKey"]
-                self.dps_strings = await validate_input(self.hass, self.basic_info)
+                self.dps_strings = await validate_input(self.hass, user_input)
                 return await self.async_step_pick_entity_type()
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -294,7 +310,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             except EmptyDpsList:
                 errors["base"] = "empty_dps"
-            except Exception as ex:  # pylint: disable=broad-except
+            except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
 
@@ -390,7 +406,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         """Initialize localtuya options flow."""
         self.config_entry = config_entry
         self.dps_strings = config_entry.data.get(CONF_DPS_STRINGS, gen_dps_strings())
-        self.entities = config_entry.data[CONF_ENTITIES]
+        if not config_entry.data.get(CONF_IS_GATEWAY):
+            self.entities = config_entry.data[CONF_ENTITIES]
         self.data = None
 
     async def async_step_init(self, user_input=None):
