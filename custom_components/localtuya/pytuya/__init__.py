@@ -62,7 +62,7 @@ __author__ = "postlund"
 
 _LOGGER = logging.getLogger(__name__)
 
-TuyaMessage = namedtuple("TuyaMessage", "seqno cmd retcode payload crc")
+TuyaMessage = namedtuple("TuyaMessage", "seqno cmd retcode payload crc crcpassed")
 
 ACTION_SET = "set"
 ACTION_STATUS = "status"
@@ -234,7 +234,7 @@ class AESCipher:
 
     @staticmethod
     def _unpad(data):
-        return data[: -ord(data[len(data) - 1 :])]
+        return data[: -ord(data[len(data) - 1:])]
 
 
 class MessageDispatcher(ContextualLogger):
@@ -301,15 +301,19 @@ class MessageDispatcher(ContextualLogger):
             else:
                 payload_start = header_len
                 payload_length = length - 4 - struct.calcsize(MESSAGE_END_FMT)
-            payload = self.buffer[payload_start : payload_start + payload_length]
+            payload = self.buffer[payload_start: payload_start + payload_length]
 
             crc, _ = struct.unpack_from(
                 MESSAGE_END_FMT,
                 self.buffer[payload_start + payload_length: payload_start + length],
             )
 
+            # CRC calculated from prefix to end of payload
+            crc_calc = binascii.crc32(self.buffer[:header_len + payload_length])
+
             self.buffer = self.buffer[header_len - 4 + length:]
-            self._dispatch(TuyaMessage(seqno, cmd, retcode, payload, crc))
+
+            self._dispatch(TuyaMessage(seqno, cmd, retcode, payload, crc, crc == crc_calc))
 
     def _dispatch(self, msg):
         """Dispatch a message to someone that is listening."""
@@ -495,7 +499,10 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             self.debug("Wait was aborted for seqno %d", seqno)
             return None
 
-        # TODO: Verify stuff, e.g. CRC sequence number?
+        if not msg.crcpassed:
+            self.debug("CRC for sequence number %d failed, resending command %s", seqno, command)
+            return await self.exchange(command, dps, cid)
+
         payload = self._decode_payload(msg.payload)
 
         # Perform a new exchange (once) if we switched device type
@@ -778,7 +785,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                     + payload
             )
 
-        msg = TuyaMessage(self.seqno, command_hb, 0, payload, 0)
+        msg = TuyaMessage(self.seqno, command_hb, 0, payload, 0, True)
         self.seqno += 1
         return pack_message(msg)
 
