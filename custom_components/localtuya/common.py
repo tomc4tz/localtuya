@@ -283,6 +283,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._config_entry = config_entry
         self._interface = None
         self._is_closing = False
+        # Tuya Gateway needs to be connected first before sub-devices start connecting
         self._connect_task = asyncio.create_task(self._make_connection())
         self._disconnect_task = None
         self._retry_sub_conn_interval = None
@@ -346,7 +347,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._connect_task = None
 
     async def _handle_sub_device_request(self, data):
-        """Handle requests from sub-devices"""
+        """Handles a request dispatched from a sub-device"""
         request = data["request"]
         cid = data["cid"]
         content = data["content"]
@@ -381,10 +382,17 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self.debug("Invalid request %s from %s", request, cid)
 
     def _add_sub_device_interface(self, cid, dps):
+        """Adds a sub-device to underlying pytuya interface"""
         self._interface.add_sub_device(cid)
         self._interface.add_dps_to_request(dps, cid)
 
     async def _get_sub_device_status(self, cid, is_retry):
+        """
+        Queries sub-device status and dispatch events depending on if it's a retry.
+        Retries are used because we have no way of knowing if a sub-device has disconnected,
+            therefore we consistently query failed status updates to know if a device comes
+            back online.
+        """
         status = await self._interface.status(cid)
         if status:
             self.status_updated(status)
@@ -397,6 +405,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
 
     def _dispatch_event(self, event, event_data, cid):
+        """Dispatches an event to a sub-device"""
         self.debug("Dispatching event %s to sub-device %s with data %s", event, cid, event_data)
 
         async_dispatcher_send(
@@ -409,6 +418,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         )
 
     async def _retry_sub_device_connection(self, _now):
+        """ Retries sub-device status, to be called by a HASS interval """
         for cid in self._sub_devices:
             if self._sub_devices[cid]["retry_status"]:
                 await self._get_sub_device_status(cid, True)
@@ -535,10 +545,12 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self.debug("Invalid event %s from gateway", event)
 
     def _async_dispatch_gateway_request(self, request, content):
+        """Dispatches a request to the parent gateway using a retry loop"""
         self.debug("Dispatching request %s to gateway with content %s", request, content)
         asyncio.create_task(self._gateway_request_task(request, content))
 
     async def _gateway_request_task(self, request, content):
+        """Retry loop for dispatching a request to the parent gateway"""
         if self._pending_request["request"]:
             self.debug(
                 "Unable to dispatch request %s due to pending request %s",
@@ -614,6 +626,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._dispatch_status()
 
     def _dispatch_status(self):
+        """Dispatches status to downstream entities"""
         signal = f"localtuya_{self._config_entry[CONF_DEVICE_ID]}"
         async_dispatcher_send(self._hass, signal, self._status)
 
