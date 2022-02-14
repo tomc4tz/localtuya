@@ -1,7 +1,7 @@
 # PyTuya Module
 # -*- coding: utf-8 -*-
 """
-Python module to interface with Tuya WiFi, Zigbee, or Bluetooth smart devices.
+Python module to interface with Tuya WiFi or Zigbee smart devices.
 
 Mostly derived from Shenzhen Xenon ESP8266MOD WiFi smart devices
 E.g. https://wikidevi.com/wiki/Xenon_SM-PW701U
@@ -690,12 +690,11 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             payload = self.cipher.decrypt(payload, False)
 
             if "data unvalid" in payload:
-                if not self.is_gateway:  # json data unvalid for gateway should be ignored
-                    self.dev_type = DEV_TYPE_0D
-                    self.debug(
-                        "switching to dev_type %s",
-                        self.dev_type,
-                    )
+                self.dev_type = DEV_TYPE_0D
+                self.debug(
+                    "switching to dev_type %s",
+                    self.dev_type,
+                )
                 return None
         else:
             raise Exception(f"Unexpected payload={payload}")
