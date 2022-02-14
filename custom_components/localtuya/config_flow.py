@@ -3,8 +3,6 @@ import errno
 import logging
 from importlib import import_module
 
-from sqlalchemy import true
-
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries, core, exceptions

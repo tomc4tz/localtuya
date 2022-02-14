@@ -14,7 +14,6 @@ from homeassistant.const import (
     CONF_SCAN_INTERVAL,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.dispatcher import (
@@ -40,8 +39,6 @@ from .const import (
     GW_EVT_CONNECTED,
     GW_EVT_DISCONNECTED,
     SUB_DEVICE_RECONNECT_INTERVAL,
-    SUB_DEVICE_DISPATCH_RETRY_MAX,
-    SUB_DEVICE_DISPATCH_RETRY_INTERVAL,
     TUYA_DEVICE,
 )
 
