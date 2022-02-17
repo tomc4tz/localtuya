@@ -14,7 +14,6 @@ from homeassistant.const import (
     CONF_SCAN_INTERVAL,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.dispatcher import (
@@ -36,13 +35,10 @@ from .const import (
     GW_REQ_STATUS,
     GW_REQ_SET_DP,
     GW_REQ_SET_DPS,
-    GW_EVT_REQ_ACK,
     GW_EVT_STATUS_UPDATED,
     GW_EVT_CONNECTED,
     GW_EVT_DISCONNECTED,
     SUB_DEVICE_RECONNECT_INTERVAL,
-    SUB_DEVICE_DISPATCH_RETRY_MAX,
-    SUB_DEVICE_DISPATCH_RETRY_INTERVAL,
     TUYA_DEVICE,
 )
 
@@ -283,8 +279,9 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._config_entry = config_entry
         self._interface = None
         self._is_closing = False
+        # Tuya Gateway needs to be connected first before sub-devices start connecting
         self._connect_task = asyncio.create_task(self._make_connection())
-        self._disconnect_task = None
+        self._sub_device_task = None
         self._retry_sub_conn_interval = None
         self._sub_devices = {}
         self.set_logger(_LOGGER, config_entry[CONF_DEVICE_ID])
@@ -306,6 +303,13 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def _make_connection(self):
         """Subscribe localtuya entity events."""
         self.debug("Connecting to gateway %s", self._config_entry[CONF_HOST])
+
+        if not self._sub_device_task:
+            signal = f"localtuya_gateway_{self._config_entry[CONF_DEVICE_ID]}"
+            self._sub_device_task = async_dispatcher_connect(
+                self._hass, signal, self._handle_sub_device_request
+        )
+
         try:
             self._interface = await pytuya.connect(
                 self._config_entry[CONF_HOST],
@@ -316,15 +320,8 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 is_gateway=True,
             )
 
-            if self._disconnect_task is not None:
-                self._disconnect_task()
-
-            signal = f"localtuya_gateway_{self._config_entry[CONF_DEVICE_ID]}"
-            self._disconnect_task = async_dispatcher_connect(
-                self._hass, signal, self._handle_sub_device_request
-            )
-
             # Re-add and get status of previously added sub-devices
+            # Note this assumes the gateway device has not been tear down
             for cid in self._sub_devices:
                 self._add_sub_device_interface(cid, self._sub_devices[cid]["dps"])
                 self._dispatch_event(GW_EVT_CONNECTED, None, cid)
@@ -346,13 +343,12 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._connect_task = None
 
     async def _handle_sub_device_request(self, data):
-        """Handle requests from sub-devices"""
+        """Handles a request dispatched from a sub-device"""
         request = data["request"]
         cid = data["cid"]
         content = data["content"]
 
         self.debug("Received request %s from %s with content %s", request, cid, content)
-        self._dispatch_event(GW_EVT_REQ_ACK, None, cid)
 
         if request == GW_REQ_ADD:
             if cid in self._sub_devices:
@@ -368,35 +364,57 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 self.warning("Invalid sub-device removal request for %s", cid)
             else:
                 del self._sub_devices[cid]
-                self._interface.remove_sub_device(cid)
+                if self._interface is not None:
+                    self._interface.remove_sub_device(cid)
                 self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
         elif request == GW_REQ_STATUS:
-            status = await self._interface.status(cid)
-            self.status_updated(status)
+            await self._get_sub_device_status(cid, False)
         elif request == GW_REQ_SET_DP:
-            await self._interface.set_dp(content["value"], content["dp_index"], cid)
+            if self._interface is not None:
+                await self._interface.set_dp(content["value"], content["dp_index"], cid)
         elif request == GW_REQ_SET_DPS:
-            await self._interface.set_dps(content["dps"], cid)
+            if self._interface is not None:
+                await self._interface.set_dps(content["dps"], cid)
         else:
             self.debug("Invalid request %s from %s", request, cid)
 
     def _add_sub_device_interface(self, cid, dps):
-        self._interface.add_sub_device(cid)
-        self._interface.add_dps_to_request(dps, cid)
+        """Adds a sub-device to underlying pytuya interface"""
+        if self._interface is not None:
+            self._interface.add_sub_device(cid)
+            self._interface.add_dps_to_request(dps, cid)
 
     async def _get_sub_device_status(self, cid, is_retry):
-        status = await self._interface.status(cid)
+        """
+        Queries sub-device status and dispatch events depending on if it's a retry.
+        Retries are used because we have no way of knowing if a sub-device has disconnected,
+            therefore we consistently query failed status updates to know if a device comes
+            back online.
+        """
+        if self._interface is not None:
+            status = await self._interface.status(cid)
+        else:
+            status = None
+
         if status:
             self.status_updated(status)
             self._sub_devices[cid]["retry_status"] = False
-            if is_retry:
-                self._dispatch_event(GW_EVT_CONNECTED, None, cid)
+            # Commented out by knifehandz 2022/02/13
+            # Skip updating connection based on status updates for now
+            #
+            # if is_retry:
+            #     self._dispatch_event(GW_EVT_CONNECTED, None, cid)
         else:
+            # Special case to ask sub-device to use its last cached status
+            self._dispatch_event(GW_EVT_STATUS_UPDATED, {"use_last_status": True}, cid)
             self._sub_devices[cid]["retry_status"] = True
-            if not is_retry:
-                self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
+            # Skip updating connection based on status updates for now
+            #
+            # if not is_retry:
+            #     self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
 
     def _dispatch_event(self, event, event_data, cid):
+        """Dispatches an event to a sub-device"""
         self.debug("Dispatching event %s to sub-device %s with data %s", event, cid, event_data)
 
         async_dispatcher_send(
@@ -409,6 +427,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         )
 
     async def _retry_sub_device_connection(self, _now):
+        """ Retries sub-device status, to be called by a HASS interval """
         for cid in self._sub_devices:
             if self._sub_devices[cid]["retry_status"]:
                 await self._get_sub_device_status(cid, True)
@@ -419,10 +438,10 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         if self._connect_task is not None:
             self._connect_task.cancel()
             await self._connect_task
+        if self._sub_device_task is not None:
+            self._sub_device_task()
         if self._interface is not None:
             await self._interface.close()
-        if self._disconnect_task is not None:
-            self._disconnect_task()
 
     @callback
     def status_updated(self, status):
@@ -463,7 +482,6 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         self._is_closing = False
         self._is_connected = False
         self._is_added = False
-        self._pending_request = {"request": None, "content": None, "retry_count": 0}
         self.set_logger(_LOGGER, config_entry[CONF_DEVICE_ID])
 
         # Safety check
@@ -519,13 +537,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
         self.debug("Received event %s from gateway with data %s", event, event_data)
 
-        if event == GW_EVT_REQ_ACK:
-            if self._pending_request["request"]:
-                self.debug("Request %s acknowledged", self._pending_request["request"])
-                self._pending_request["request"] = None
-            else:
-                self.debug("Gateway acknowledged request but none pending")
-        elif event == GW_EVT_STATUS_UPDATED:
+        if event == GW_EVT_STATUS_UPDATED:
             self.status_updated(event_data)
         elif event == GW_EVT_CONNECTED:
             self._is_connected = True
@@ -535,44 +547,18 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self.debug("Invalid event %s from gateway", event)
 
     def _async_dispatch_gateway_request(self, request, content):
+        """Dispatches a request to the parent gateway using a retry loop"""
         self.debug("Dispatching request %s to gateway with content %s", request, content)
-        asyncio.create_task(self._gateway_request_task(request, content))
 
-    async def _gateway_request_task(self, request, content):
-        if self._pending_request["request"]:
-            self.debug(
-                "Unable to dispatch request %s due to pending request %s",
-                request,
-                self._pending_request["request"],
-            )
-
-            return
-
-        self._pending_request["request"] = request
-        self._pending_request["content"] = content
-        self._pending_request["retry_count"] = 0
-
-        while True:
-            if not self._pending_request["request"]:
-                return
-
-            if self._pending_request["retry_count"] >= SUB_DEVICE_DISPATCH_RETRY_MAX:
-                self.debug("Request %s exceeded maximum retries", self._pending_request["request"])
-                self._pending_request["request"] = None
-                return
-
-            async_dispatcher_send(
-                self._hass,
-                f"localtuya_gateway_{self._parent_gateway}",
-                {
-                    "request": self._pending_request["request"],
-                    "cid": self._config_entry[CONF_DEVICE_ID],
-                    "content": self._pending_request["content"],
-                },
-            )
-
-            self._pending_request["retry_count"] += 1
-            await asyncio.sleep(SUB_DEVICE_DISPATCH_RETRY_INTERVAL)
+        async_dispatcher_send(
+            self._hass,
+            f"localtuya_gateway_{self._parent_gateway}",
+            {
+                "request": request,
+                "cid": self._config_entry[CONF_DEVICE_ID],
+                "content": content,
+            },
+        )
 
     async def set_dp(self, state, dp_index):
         """Change value of a DP of the Tuya device."""
@@ -610,10 +596,12 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     @callback
     def status_updated(self, status):
         """Device updated status."""
-        self._status.update(status)
+        if not status.get("use_last_status"):
+            self._status.update(status)
         self._dispatch_status()
 
     def _dispatch_status(self):
+        """Dispatches status to downstream entities"""
         signal = f"localtuya_{self._config_entry[CONF_DEVICE_ID]}"
         async_dispatcher_send(self._hass, signal, self._status)
 
@@ -652,12 +640,17 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
 
         def _update_handler(status):
             """Update entity state when status was updated."""
+            update = False
+
             if status is None:
-                status = {}
-            if self._status != status:
+                self._status = {}
+                update = True
+            elif self._status != status and str(self._dp_id) in status:
                 self._status = status.copy()
-                if status:
-                    self.status_updated()
+                update = True
+
+            if update:
+                self.status_updated()
                 self.schedule_update_ha_state()
 
         signal = f"localtuya_{self._config_entry.data[CONF_DEVICE_ID]}"

@@ -108,14 +108,11 @@ GW_REQ_REMOVE = "request_remove"
 GW_REQ_STATUS = "request_status"
 GW_REQ_SET_DP = "request_set_dp"
 GW_REQ_SET_DPS = "request_set_dps"
-GW_EVT_REQ_ACK = "request_acknowledged"
 GW_EVT_STATUS_UPDATED = "event_status_updated"
 GW_EVT_CONNECTED = "event_connected"
 GW_EVT_DISCONNECTED = "event_disconnected"
 
 # timeouts for gateway & sub-device retry tasks
-SUB_DEVICE_RECONNECT_INTERVAL = 60
-SUB_DEVICE_DISPATCH_RETRY_MAX = 3
-SUB_DEVICE_DISPATCH_RETRY_INTERVAL = 5
+SUB_DEVICE_RECONNECT_INTERVAL = 300
 
 TUYA_DEVICE = "tuya_device"
