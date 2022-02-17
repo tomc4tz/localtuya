@@ -17,7 +17,7 @@
         "step": {
             "user": {
                 "title": "Device Discovery",
-                "description": "Pick one of the automatically discovered devices, (manual) to manually to add a device, or (sub-device) to add a sub-device under a gateway.",
+                "description": "Pick one of the automatically discovered devices, (manual) to manually add a device, or (sub-device) to add a sub-device under a gateway.",
                 "data": {
                     "discovered_device": "Discovered Device"
                 }
