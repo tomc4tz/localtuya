@@ -203,6 +203,8 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
                 self._current_cover_position = 100 - curr_pos
             else:
                 self._current_cover_position = curr_pos
+            if self._state == "closing":
+                self._state = "stopped" 
         if (
             self._config[CONF_POSITIONING_MODE] == COVER_MODE_TIMED
             and self._state != self._previous_state
