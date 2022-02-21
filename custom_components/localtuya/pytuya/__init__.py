@@ -1,7 +1,7 @@
 # PyTuya Module
 # -*- coding: utf-8 -*-
 """
-Python module to interface with Tuya WiFi or Zigbee smart devices.
+Python module to interface with Tuya WiFi, Zigbee, or Bluetooth smart devices.
 
 Mostly derived from Shenzhen Xenon ESP8266MOD WiFi smart devices
 E.g. https://wikidevi.com/wiki/Xenon_SM-PW701U
