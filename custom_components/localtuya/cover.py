@@ -203,12 +203,15 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
                 self._current_cover_position = 100 - curr_pos
             else:
                 self._current_cover_position = curr_pos
-            if self._current_cover_position == 0:
-                self._state = self._open_cmd.upper()
-            elif self._current_cover_position == 100:
-                self._state = self._close_cmd.upper()
-            else:
-                self._state = self._stop_cmd.upper()
+
+            if self._current_cover_position is not None:
+                if self._current_cover_position == 0:
+                    self._state = self._open_cmd.upper()
+                elif self._current_cover_position == 100:
+                    self._state = self._close_cmd.upper()
+                else:
+                    self._state = self._stop_cmd.upper()
+
         if (
             self._config[CONF_POSITIONING_MODE] == COVER_MODE_TIMED
             and self._state != self._previous_state
