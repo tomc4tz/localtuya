@@ -236,7 +236,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
         hass.data[DOMAIN][DATA_DISCOVERY] = discovery
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown)
     except Exception:  # pylint: disable=broad-except
-        _LOGGER.exception("failed to set up discovery")
+        _LOGGER.exception("Failed to set up discovery")
 
     async def _async_reconnect(now):
         """Try connecting to devices not already connected to."""
