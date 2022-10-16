@@ -72,9 +72,7 @@ PICK_ENTITY_SCHEMA = vol.Schema(
     {vol.Required(PLATFORM_TO_ADD, default=PLATFORMS[0]): vol.In(PLATFORMS)}
 )
 
-DATA_POINT_SCHEMA = vol.Schema(
-    {vol.Required(FLOW_DP): int}
-)
+DATA_POINT_SCHEMA = vol.Schema({vol.Required(FLOW_DP): int})
 
 
 def user_schema(devices, entries):
@@ -89,13 +87,19 @@ def user_schema(devices, entries):
     )
     device_list = [f"{key} ({value})" for key, value in devices.items()]
     return vol.Schema(
-        {vol.Required(DISCOVERED_DEVICE): vol.In(device_list + [CUSTOM_DEVICE, CUSTOM_SUB_DEVICE])}
+        {
+            vol.Required(DISCOVERED_DEVICE): vol.In(
+                device_list + [CUSTOM_DEVICE, CUSTOM_SUB_DEVICE]
+            )
+        }
     )
 
 
 def sub_device_schema(devices):
     """Create schema for sub-device step."""
-    device_list = [f"{device['device_id']} ({device['friendly_name']})" for device in devices]
+    device_list = [
+        f"{device['device_id']} ({device['friendly_name']})" for device in devices
+    ]
     return vol.Schema(
         {
             vol.Required(CONF_PARENT_GATEWAY): vol.In(device_list),
@@ -229,13 +233,15 @@ async def validate_input(hass: core.HomeAssistant, data):
     interface = None
     try:
         if data.get(CONF_PARENT_GATEWAY):
-            parent_dev = async_config_entry_by_device_id(hass, data[CONF_PARENT_GATEWAY])
+            parent_dev = async_config_entry_by_device_id(
+                hass, data[CONF_PARENT_GATEWAY]
+            )
             interface = await pytuya.connect(
                 parent_dev.data[CONF_HOST],
                 parent_dev.data[CONF_DEVICE_ID],
                 parent_dev.data[CONF_LOCAL_KEY],
                 float(parent_dev.data[CONF_PROTOCOL_VERSION]),
-                is_gateway=True
+                is_gateway=True,
             )
 
             interface.add_sub_device(data[CONF_DEVICE_ID])
@@ -312,7 +318,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     errors["base"] = "discovery_failed"
             except Exception:  # pylint: disable= broad-except
-                _LOGGER.exception("discovery failed")
+                _LOGGER.exception("Discovery failed")
                 errors["base"] = "discovery_failed"
 
         self.devices = {
@@ -350,10 +356,12 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
             except EmptyDpsList:
-                if self.basic_info[CONF_IS_GATEWAY]: # Gateways don't have dps
+                if self.basic_info[CONF_IS_GATEWAY]:  # Gateways don't have dps
                     entry = async_config_entry_by_device_id(self.hass, self.unique_id)
                     if entry:
-                        self.hass.config_entries.async_update_entry(entry, data=user_input)
+                        self.hass.config_entries.async_update_entry(
+                            entry, data=user_input
+                        )
                         return self.async_abort(reason="device_updated")
                     return self.async_create_entry(
                         title=user_input[CONF_FRIENDLY_NAME], data=user_input
@@ -398,7 +406,9 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(user_input[CONF_DEVICE_ID])
                 # Take only the device ID
-                user_input[CONF_PARENT_GATEWAY] = user_input[CONF_PARENT_GATEWAY].split(" ")[0]
+                user_input[CONF_PARENT_GATEWAY] = user_input[CONF_PARENT_GATEWAY].split(
+                    " "
+                )[0]
                 user_input[CONF_PROTOCOL_VERSION] = "3.3"
                 self.basic_info = user_input
 
@@ -418,8 +428,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Populate list of gateways to choose from
         current_entries = self.hass.config_entries.async_entries(DOMAIN)
         devices = [
-            entry.data for entry in current_entries
-            if entry.data.get("is_gateway")
+            entry.data for entry in current_entries if entry.data.get("is_gateway")
         ]
 
         if len(devices) <= 0:

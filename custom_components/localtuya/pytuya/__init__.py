@@ -57,7 +57,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 version_tuple = (9, 0, 0)
-version = version_string = __version__ = "%d.%d.%d" % version_tuple
+VERSION = VERSION_STRING = __VERSION__ = "%d.%d.%d" % version_tuple
+
 __author__ = "postlund"
 
 _LOGGER = logging.getLogger(__name__)
@@ -110,22 +111,43 @@ GATEWAY_PAYLOAD_DICT = {
     # TYPE_0A should never be used with gateways
     DEV_TYPE_0D: {
         ACTION_STATUS: {"hexByte": COMMAND_DP_QUERY_NEW, "command": {"cid": ""}},
-        ACTION_SET: {"hexByte": COMMAND_CONTROL_NEW, "command": {"cid": "", "ctype": 0}},
+        ACTION_SET: {
+            "hexByte": COMMAND_CONTROL_NEW,
+            "command": {"cid": "", "ctype": 0},
+        },
         ACTION_HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
     },
 }
 PAYLOAD_DICT = {
     DEV_TYPE_0A: {
-        ACTION_STATUS: {"hexByte": COMMAND_DP_QUERY, "command": {"gwId": "", "devId": "", "uid": ""}},
-        ACTION_SET: {"hexByte": COMMAND_SET, "command": {"devId": "", "uid": "", "t": ""}},
+        ACTION_STATUS: {
+            "hexByte": COMMAND_DP_QUERY,
+            "command": {"gwId": "", "devId": "", "uid": ""},
+        },
+        ACTION_SET: {
+            "hexByte": COMMAND_SET,
+            "command": {"devId": "", "uid": "", "t": ""},
+        },
         ACTION_HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
-        ACTION_UPDATEDPS: {"hexByte": COMMAND_UPDATE_DPS, "command": {"dpId": [18, 19, 20]}},
+        ACTION_UPDATEDPS: {
+            "hexByte": COMMAND_UPDATE_DPS,
+            "command": {"dpId": [18, 19, 20]},
+        },
     },
     DEV_TYPE_0D: {
-        ACTION_STATUS: {"hexByte": COMMAND_CONTROL_NEW, "command": {"devId": "", "uid": "", "t": ""}},
-        ACTION_SET: {"hexByte": COMMAND_SET, "command": {"devId": "", "uid": "", "t": ""}},
+        ACTION_STATUS: {
+            "hexByte": COMMAND_CONTROL_NEW,
+            "command": {"devId": "", "uid": "", "t": ""},
+        },
+        ACTION_SET: {
+            "hexByte": COMMAND_SET,
+            "command": {"devId": "", "uid": "", "t": ""},
+        },
         ACTION_HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
-        ACTION_UPDATEDPS: {"hexByte": COMMAND_UPDATE_DPS, "command": {"dpId": [18, 19, 20]}},
+        ACTION_UPDATEDPS: {
+            "hexByte": COMMAND_UPDATE_DPS,
+            "command": {"dpId": [18, 19, 20]},
+        },
     },
 }
 
@@ -175,20 +197,21 @@ def pack_message(msg):
     """Pack a TuyaMessage into bytes."""
     # Create full message excluding CRC and suffix
     buffer = (
-            struct.pack(
-                MESSAGE_HEADER_FMT,
-                PREFIX_VALUE,
-                msg.seqno,
-                msg.cmd,
-                len(msg.payload) + struct.calcsize(MESSAGE_END_FMT),
-                )
-            + msg.payload
+        struct.pack(
+            MESSAGE_HEADER_FMT,
+            PREFIX_VALUE,
+            msg.seqno,
+            msg.cmd,
+            len(msg.payload) + struct.calcsize(MESSAGE_END_FMT),
+        )
+        + msg.payload
     )
 
     # Calculate CRC, add it together with suffix
     buffer += struct.pack(MESSAGE_END_FMT, binascii.crc32(buffer), SUFFIX_VALUE)
 
     return buffer
+
 
 # Commented out by knifehandz 2022/02/13
 # Seems this function is no longer used
@@ -234,7 +257,7 @@ class AESCipher:
 
     @staticmethod
     def _unpad(data):
-        return data[: -ord(data[len(data) - 1:])]
+        return data[: -ord(data[len(data) - 1 :])]
 
 
 class MessageDispatcher(ContextualLogger):
@@ -254,7 +277,7 @@ class MessageDispatcher(ContextualLogger):
 
     def abort(self):
         """Abort all waiting clients."""
-        for key in self.listeners:
+        for key in self.listeners.items():
             sem = self.listeners[key]
             self.listeners[key] = None
 
@@ -291,7 +314,7 @@ class MessageDispatcher(ContextualLogger):
             _, seqno, cmd, length, retcode = struct.unpack_from(
                 MESSAGE_RECV_HEADER_FMT, self.buffer
             )
-            if len(self.buffer[header_len - 4:]) < length:
+            if len(self.buffer[header_len - 4 :]) < length:
                 break
 
             # length includes payload length, retcode, crc and suffix
@@ -301,19 +324,21 @@ class MessageDispatcher(ContextualLogger):
             else:
                 payload_start = header_len
                 payload_length = length - 4 - struct.calcsize(MESSAGE_END_FMT)
-            payload = self.buffer[payload_start: payload_start + payload_length]
+            payload = self.buffer[payload_start : payload_start + payload_length]
 
             crc, _ = struct.unpack_from(
                 MESSAGE_END_FMT,
-                self.buffer[payload_start + payload_length: payload_start + length],
+                self.buffer[payload_start + payload_length : payload_start + length],
             )
 
             # CRC calculated from prefix to end of payload
-            crc_calc = binascii.crc32(self.buffer[:header_len + payload_length])
+            crc_calc = binascii.crc32(self.buffer[: header_len + payload_length])
 
-            self.buffer = self.buffer[header_len - 4 + length:]
+            self.buffer = self.buffer[header_len - 4 + length :]
 
-            self._dispatch(TuyaMessage(seqno, cmd, retcode, payload, crc, crc == crc_calc))
+            self._dispatch(
+                TuyaMessage(seqno, cmd, retcode, payload, crc, crc == crc_calc)
+            )
 
     def _dispatch(self, msg):
         """Dispatch a message to someone that is listening."""
@@ -372,7 +397,9 @@ class EmptyListener(TuyaListener):
 class TuyaProtocol(asyncio.Protocol, ContextualLogger):
     """Implementation of the Tuya protocol."""
 
-    def __init__(self, dev_id, local_key, protocol_version, on_connected, listener, is_gateway):
+    def __init__(
+        self, dev_id, local_key, protocol_version, on_connected, listener, is_gateway
+    ):
         """
         Initialize a new TuyaInterface.
 
@@ -500,7 +527,11 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             return None
 
         if not msg.crcpassed:
-            self.debug("CRC for sequence number %d failed, resending command %s", seqno, command)
+            self.debug(
+                "CRC for sequence number %d failed, resending command %s",
+                seqno,
+                command,
+            )
             return await self.exchange(command, dps, cid)
 
         payload = self._decode_payload(msg.payload)
@@ -645,7 +676,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             if isinstance(dp_indicies, int):
                 self.dps_to_request[cid][str(dp_indicies)] = None
             else:
-                self.dps_to_request[cid].update({str(index): None for index in dp_indicies})
+                self.dps_to_request[cid].update(
+                    {str(index): None for index in dp_indicies}
+                )
         else:
             if isinstance(dp_indicies, int):
                 self.dps_to_request[str(dp_indicies)] = None
@@ -678,15 +711,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         elif payload.startswith(b"{"):
             pass
         elif payload.startswith(PROTOCOL_VERSION_BYTES_31):
-            payload = payload[len(PROTOCOL_VERSION_BYTES_31):]  # remove version header
+            payload = payload[len(PROTOCOL_VERSION_BYTES_31) :]  # remove version header
             # remove (what I'm guessing, but not confirmed is) 16-bytes of MD5
             # hexdigest of payload
             payload = self.cipher.decrypt(payload[16:])
         elif self.version == 3.3:
-            if payload.startswith(
-                    PROTOCOL_VERSION_BYTES_33
-            ):
-                payload = payload[len(PROTOCOL_33_HEADER):]
+            if payload.startswith(PROTOCOL_VERSION_BYTES_33):
+                payload = payload[len(PROTOCOL_33_HEADER) :]
             payload = self.cipher.decrypt(payload, False)
 
             if "data unvalid" in payload:
@@ -761,27 +792,27 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             if command_hb not in [
                 COMMAND_DP_QUERY,
                 COMMAND_DP_QUERY_NEW,
-                COMMAND_UPDATE_DPS
+                COMMAND_UPDATE_DPS,
             ]:
                 # add the 3.3 header
                 payload = PROTOCOL_33_HEADER + payload
         elif command == ACTION_SET:
             payload = self.cipher.encrypt(payload)
             to_hash = (
-                    b"data="
-                    + payload
-                    + b"||lpv="
-                    + PROTOCOL_VERSION_BYTES_31
-                    + b"||"
-                    + self.local_key
+                b"data="
+                + payload
+                + b"||lpv="
+                + PROTOCOL_VERSION_BYTES_31
+                + b"||"
+                + self.local_key
             )
             hasher = md5()
             hasher.update(to_hash)
             hexdigest = hasher.hexdigest()
             payload = (
-                    PROTOCOL_VERSION_BYTES_31
-                    + hexdigest[8:][:16].encode("latin1")
-                    + payload
+                PROTOCOL_VERSION_BYTES_31
+                + hexdigest[8:][:16].encode("latin1")
+                + payload
             )
 
         msg = TuyaMessage(self.seqno, command_hb, 0, payload, 0, True)
@@ -796,7 +827,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         if self.is_gateway:
             cid = status["cid"]
             if cid not in self.sub_devices:
-                self.info("Sub-device status update ignored because cid %s is not added", cid)
+                self.info(
+                    "Sub-device status update ignored because cid %s is not added", cid
+                )
                 self.dps_cache["last_updated_cid"] = ""
             else:
                 self.dps_cache["last_updated_cid"] = cid
@@ -810,14 +843,14 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
 
 async def connect(
-        address,
-        device_id,
-        local_key,
-        protocol_version,
-        listener=None,
-        port=6668,
-        timeout=5,
-        is_gateway=False,
+    address,
+    device_id,
+    local_key,
+    protocol_version,
+    listener=None,
+    port=6668,
+    timeout=5,
+    is_gateway=False,
 ):
     """Connect to a device."""
     loop = asyncio.get_running_loop()
@@ -830,7 +863,7 @@ async def connect(
             on_connected,
             listener or EmptyListener(),
             is_gateway,
-            ),
+        ),
         address,
         port,
     )
