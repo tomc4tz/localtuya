@@ -422,8 +422,10 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def _retry_sub_device_connection(self, _now):
         """Retries sub-device status, to be called by a HASS interval"""
         for cid in self._sub_devices.items():
-            if self._sub_devices[cid]["retry_status"]:
-                await self._get_sub_device_status(cid)
+            if self._sub_devices[cid]:
+                if "retry_status" in self._sub_devices[cid].keys():
+                    if self._sub_devices[cid]["retry_status"]:
+                        await self._get_sub_device_status(cid)
 
     async def close(self):
         """Close connection and stop re-connect loop."""
