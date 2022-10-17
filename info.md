@@ -1,8 +1,8 @@
-[![](https://img.shields.io/github/release/rospogrigio/localtuya-homeassistant/all.svg?style=for-the-badge)](https://github.com/rospogrigio/localtuya-homeassistant/releases)
+[![](https://img.shields.io/github/release/leeyuentuen/localtuya/all.svg?style=for-the-badge)](https://github.com/leeyuentuen/localtuya/releases/)
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
-[![](https://img.shields.io/badge/MAINTAINER-%40rospogrigio-green?style=for-the-badge)](https://github.com/rospogrigio)
+[![](https://img.shields.io/badge/MAINTAINER-%40leeyuentuen-green?style=for-the-badge)](https://github.com/leeyuentuen)
 
-![logo](https://github.com/rospogrigio/localtuya-homeassistant/blob/master/img/logo-small.png)
+![logo](https://github.com/leeyuentuen/localtuya/blob/master/img/logo-small.png)
 
 A Home Assistant custom Integration for local handling of Tuya-based devices.
 Device status is updated receiving push updates from the device instead of polling, so status updates are extremely fast (even if manually operated).
