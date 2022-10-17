@@ -324,12 +324,20 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
             # Re-add and get status of previously added sub-devices
             # Note this assumes the gateway device has not been tear down
-            for cid in self._sub_devices.items():
-                self._add_sub_device_interface(cid, self._sub_devices[cid]["dps"])
-                self._dispatch_event(GW_EVT_CONNECTED, None, cid)
+            for subitem in self._sub_devices.items():
+                for value in subitem:
+                    if not isinstance(value, dict):
+                        return
 
-                # Initial status update
-                await self._get_sub_device_status(cid)
+                    if "dps" not in value.keys():
+                        return
+
+                    if value["dps"]:
+                        self._add_sub_device_interface(subitem, subitem["dps"])
+                        self._dispatch_event(GW_EVT_CONNECTED, None, subitem)
+
+                        # Initial status update
+                        await self._get_sub_device_status(subitem)
 
             self._retry_sub_conn_interval = async_track_time_interval(
                 self._hass,
@@ -395,13 +403,8 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         """
         if self._interface is not None:
             status = await self._interface.status(cid)
-        else:
-            status = None
-
-        if status:
             self.status_updated(status)
             self._sub_devices[cid]["retry_status"] = False
-
         else:
             # Special case to ask sub-device to use its last cached status
             self._dispatch_event(GW_EVT_STATUS_UPDATED, {"use_last_status": True}, cid)
@@ -421,11 +424,17 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
     async def _retry_sub_device_connection(self, _now):
         """Retries sub-device status, to be called by a HASS interval"""
-        for cid in self._sub_devices.items():
-            if self._sub_devices[cid]:
-                if "retry_status" in self._sub_devices[cid].keys():
-                    if self._sub_devices[cid]["retry_status"]:
-                        await self._get_sub_device_status(cid)
+
+        for subitem in self._sub_devices.items():
+            for value in subitem:
+                if not isinstance(value, dict):
+                    return
+
+                if "retry_status" not in value.keys():
+                    return
+
+                if value["retry_status"]:
+                    await self._get_sub_device_status(subitem)
 
     async def close(self):
         """Close connection and stop re-connect loop."""
@@ -441,6 +450,8 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     @callback
     def status_updated(self, status):
         """Device updated status."""
+        if status is None:
+            return
         cid = status["last_updated_cid"]
         if cid == "":  # Not a status update we are interested in
             return

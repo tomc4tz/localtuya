@@ -586,7 +586,8 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                     dps = list(set(dps).intersection(set(UPDATE_DPS_WHITELIST)))
             self.debug("updatedps() entry (dps %s, dps_cache %s)", dps, self.dps_cache)
             payload = self._generate_payload(ACTION_UPDATEDPS, dps)
-            self.transport.write(payload)
+            if self.transport is not None:
+                self.transport.write(payload)
         return True
 
     async def set_dp(self, value, dp_index, cid=None):
