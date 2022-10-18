@@ -714,9 +714,12 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         if not self.is_gateway:
             raise Exception("Attempt to remove sub-device from a non-gateway device")
 
-        self.sub_devices.remove(cid)
-        del self.dps_to_request[cid]
-        del self.dps_cache[cid]
+        if cid in self.sub_devices:
+            self.sub_devices.remove(cid)
+        if cid in self.dps_to_request:
+            del self.dps_to_request[cid]
+        if cid in self.dps_cache:
+            del self.dps_cache[cid]
 
     def _decode_payload(self, payload):
         """Decodes payload received from a Tuya device"""
