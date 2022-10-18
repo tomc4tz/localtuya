@@ -100,11 +100,16 @@ from .common import (
 )
 from .config_flow import config_schema
 from .const import (
+    CONF_DP,
     CONF_PRODUCT_KEY,
     CONF_IS_GATEWAY,
     CONF_PARENT_GATEWAY,
+    CONF_VALUE,
     DATA_DISCOVERY,
     DOMAIN,
+    PARAMETER_GW_ID,
+    PARAMETER_IP,
+    PARAMETER_PRODUCT_KEY,
     TUYA_DEVICE,
 )
 from .discovery import TuyaDiscovery
@@ -117,8 +122,6 @@ RECONNECT_INTERVAL = timedelta(seconds=60)
 
 CONFIG_SCHEMA = config_schema()
 
-CONF_DP = "dp"
-CONF_VALUE = "value"
 
 SERVICE_SET_DP = "set_dp"
 SERVICE_SET_DP_SCHEMA = vol.Schema(
@@ -183,9 +186,9 @@ async def async_setup(hass: HomeAssistant, config: dict):
 
     def _device_discovered(device):
         """Update address of device if it has changed."""
-        device_ip = device["ip"]
-        device_id = device["gwId"]
-        product_key = device["productKey"]
+        device_ip = device[PARAMETER_IP]
+        device_id = device[PARAMETER_GW_ID]
+        product_key = device[PARAMETER_PRODUCT_KEY]
 
         # If device is not in cache, check if a config entry exists
         if device_id not in device_cache:

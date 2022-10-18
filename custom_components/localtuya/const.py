@@ -118,3 +118,21 @@ GW_EVT_DISCONNECTED = "event_disconnected"
 SUB_DEVICE_RECONNECT_INTERVAL = 300
 
 TUYA_DEVICE = "tuya_device"
+
+PROPERTY_DPS = "dps"
+
+PARAMETER_CID = "cid"
+PARAMETER_DEV_ID = "devId"
+PARAMETER_DP_ID = "dpId"
+PARAMETER_GW_ID = "gwId"
+PARAMETER_IP = "ip"
+PARAMETER_PRODUCT_KEY = "productKey"
+PARAMETER_UID = "uid"
+PARAMETER_VERSION = "version"
+
+STATUS_RETRY = "retry_status"
+STATUS_LAST_USED = "use_last_status"
+
+CONF_DP = "dp"
+CONF_VALUE = "value"
+CONF_DP_INDEX = "dp_index"

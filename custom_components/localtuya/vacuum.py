@@ -55,6 +55,9 @@ DEFAULT_PAUSED_STATE = "paused"
 DEFAULT_RETURN_MODE = "chargego"
 DEFAULT_STOP_STATUS = "standby"
 
+SET_MODE = "set_mode"
+MODE = "mode"
+
 
 def flow_schema(dps):
     """Return schema used in config flow."""
@@ -111,7 +114,7 @@ class LocaltuyaVacuum(LocalTuyaEntity, StateVacuumEntity):
         self._fan_speed = ""
         self._cleaning_mode = ""
 
-        print("Initialized vacuum [{}]".format(self.name))
+        _LOGGER.debug("Initialized vacuum [%s]", self.name)
 
     @property
     def supported_features(self):
@@ -201,8 +204,8 @@ class LocaltuyaVacuum(LocalTuyaEntity, StateVacuumEntity):
 
     async def async_send_command(self, command, params=None, **kwargs):
         """Send a command to a vacuum cleaner."""
-        if command == "set_mode" and "mode" in params:
-            mode = params["mode"]
+        if command == SET_MODE and MODE in params:
+            mode = params[MODE]
             await self._device.set_dp(mode, self._config[CONF_MODE_DP])
 
     def status_updated(self):

@@ -24,11 +24,13 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import pytuya
 from .const import (
+    CONF_DP_INDEX,
     CONF_LOCAL_KEY,
     CONF_PRODUCT_KEY,
     CONF_PROTOCOL_VERSION,
     CONF_IS_GATEWAY,
     CONF_PARENT_GATEWAY,
+    CONF_VALUE,
     DOMAIN,
     GW_REQ_ADD,
     GW_REQ_REMOVE,
@@ -38,6 +40,10 @@ from .const import (
     GW_EVT_STATUS_UPDATED,
     GW_EVT_CONNECTED,
     GW_EVT_DISCONNECTED,
+    PARAMETER_CID,
+    PROPERTY_DPS,
+    STATUS_LAST_USED,
+    STATUS_RETRY,
     SUB_DEVICE_RECONNECT_INTERVAL,
     TUYA_DEVICE,
 )
@@ -329,11 +335,11 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                     if not isinstance(value, dict):
                         return
 
-                    if "dps" not in value.keys():
+                    if PROPERTY_DPS not in value.keys():
                         return
 
-                    if value["dps"]:
-                        self._add_sub_device_interface(subitem, subitem["dps"])
+                    if value[PROPERTY_DPS]:
+                        self._add_sub_device_interface(subitem, subitem[PROPERTY_DPS])
                         self._dispatch_event(GW_EVT_CONNECTED, None, subitem)
 
                         # Initial status update
@@ -355,7 +361,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def _handle_sub_device_request(self, data):
         """Handles a request dispatched from a sub-device"""
         request = data["request"]
-        cid = data["cid"]
+        cid = data[PARAMETER_CID]
         content = data["content"]
 
         self.debug("Received request %s from %s with content %s", request, cid, content)
@@ -364,8 +370,11 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             if cid in self._sub_devices:
                 self.warning("Duplicate sub-device addition for %s", cid)
             else:
-                self._sub_devices[cid] = {"dps": content["dps"], "retry_status": False}
-                self._add_sub_device_interface(cid, content["dps"])
+                self._sub_devices[cid] = {
+                    PROPERTY_DPS: content[PROPERTY_DPS],
+                    STATUS_RETRY: False,
+                }
+                self._add_sub_device_interface(cid, content[PROPERTY_DPS])
                 self._dispatch_event(GW_EVT_CONNECTED, None, cid)
                 # Initial status update
                 await self._get_sub_device_status(cid)
@@ -381,10 +390,12 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             await self._get_sub_device_status(cid)
         elif request == GW_REQ_SET_DP:
             if self._interface is not None:
-                await self._interface.set_dp(content["value"], content["dp_index"], cid)
+                await self._interface.set_dp(
+                    content[CONF_VALUE], content[CONF_DP_INDEX], cid
+                )
         elif request == GW_REQ_SET_DPS:
             if self._interface is not None:
-                await self._interface.set_dps(content["dps"], cid)
+                await self._interface.set_dps(content[PROPERTY_DPS], cid)
         else:
             self.debug("Invalid request %s from %s", request, cid)
 
@@ -404,11 +415,11 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         if self._interface is not None:
             status = await self._interface.status(cid)
             self.status_updated(status)
-            self._sub_devices[cid]["retry_status"] = False
+            self._sub_devices[cid][STATUS_RETRY] = False
         else:
             # Special case to ask sub-device to use its last cached status
-            self._dispatch_event(GW_EVT_STATUS_UPDATED, {"use_last_status": True}, cid)
-            self._sub_devices[cid]["retry_status"] = True
+            self._dispatch_event(GW_EVT_STATUS_UPDATED, {STATUS_LAST_USED: True}, cid)
+            self._sub_devices[cid][STATUS_RETRY] = True
 
     def _dispatch_event(self, event, event_data, cid):
         """Dispatches an event to a sub-device"""
@@ -430,10 +441,10 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 if not isinstance(value, dict):
                     return
 
-                if "retry_status" not in value.keys():
+                if STATUS_RETRY not in value.keys():
                     return
 
-                if value["retry_status"]:
+                if value[STATUS_RETRY]:
                     await self._get_sub_device_status(subitem)
 
     async def close(self):
@@ -533,7 +544,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             )
 
             self._async_dispatch_gateway_request(
-                GW_REQ_ADD, {"dps": self.dps_to_request}
+                GW_REQ_ADD, {PROPERTY_DPS: self.dps_to_request}
             )
 
             self._is_added = True
@@ -565,7 +576,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             f"localtuya_gateway_{self._parent_gateway}",
             {
                 "request": request,
-                "cid": self._config_entry[CONF_DEVICE_ID],
+                PARAMETER_CID: self._config_entry[CONF_DEVICE_ID],
                 "content": content,
             },
         )
@@ -576,8 +587,8 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self._async_dispatch_gateway_request(
                 GW_REQ_SET_DP,
                 {
-                    "value": state,
-                    "dp_index": dp_index,
+                    CONF_VALUE: state,
+                    CONF_DP_INDEX: dp_index,
                 },
             )
         else:
@@ -591,7 +602,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self._async_dispatch_gateway_request(
                 GW_REQ_SET_DPS,
                 {
-                    "dps": states,
+                    PROPERTY_DPS: states,
                 },
             )
         else:
@@ -612,7 +623,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     @callback
     def status_updated(self, status):
         """Device updated status."""
-        if not status.get("use_last_status"):
+        if not status.get(STATUS_LAST_USED):
             self._status.update(status)
         self._dispatch_status()
 

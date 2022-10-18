@@ -56,6 +56,16 @@ from hashlib import md5
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+from config.localtuya.custom_components.localtuya.const import (
+    PARAMETER_CID,
+    PARAMETER_DEV_ID,
+    PARAMETER_DP_ID,
+    PARAMETER_GW_ID,
+    PARAMETER_UID,
+    PROPERTY_DPS,
+)
+from homeassistant.const import CONF_DEVICE_ID
+
 version_tuple = (9, 0, 0)
 VERSION = VERSION_STRING = __VERSION__ = "%d.%d.%d" % version_tuple
 
@@ -110,10 +120,13 @@ COMMAND_UPDATE_DPS = 0x12
 GATEWAY_PAYLOAD_DICT = {
     # TYPE_0A should never be used with gateways
     DEV_TYPE_0D: {
-        ACTION_STATUS: {"hexByte": COMMAND_DP_QUERY_NEW, "command": {"cid": ""}},
+        ACTION_STATUS: {
+            "hexByte": COMMAND_DP_QUERY_NEW,
+            "command": {PARAMETER_CID: ""},
+        },
         ACTION_SET: {
             "hexByte": COMMAND_CONTROL_NEW,
-            "command": {"cid": "", "ctype": 0},
+            "command": {PARAMETER_CID: "", "ctype": 0},
         },
         ACTION_HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
     },
@@ -122,31 +135,31 @@ PAYLOAD_DICT = {
     DEV_TYPE_0A: {
         ACTION_STATUS: {
             "hexByte": COMMAND_DP_QUERY,
-            "command": {"gwId": "", "devId": "", "uid": ""},
+            "command": {PARAMETER_GW_ID: "", PARAMETER_DEV_ID: "", PARAMETER_UID: ""},
         },
         ACTION_SET: {
             "hexByte": COMMAND_SET,
-            "command": {"devId": "", "uid": "", "t": ""},
+            "command": {PARAMETER_DEV_ID: "", PARAMETER_UID: "", "t": ""},
         },
         ACTION_HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
         ACTION_UPDATEDPS: {
             "hexByte": COMMAND_UPDATE_DPS,
-            "command": {"dpId": [18, 19, 20]},
+            "command": {PARAMETER_DP_ID: [18, 19, 20]},
         },
     },
     DEV_TYPE_0D: {
         ACTION_STATUS: {
             "hexByte": COMMAND_CONTROL_NEW,
-            "command": {"devId": "", "uid": "", "t": ""},
+            "command": {PARAMETER_DEV_ID: "", PARAMETER_UID: "", "t": ""},
         },
         ACTION_SET: {
             "hexByte": COMMAND_SET,
-            "command": {"devId": "", "uid": "", "t": ""},
+            "command": {PARAMETER_DEV_ID: "", PARAMETER_UID: "", "t": ""},
         },
         ACTION_HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
         ACTION_UPDATEDPS: {
             "hexByte": COMMAND_UPDATE_DPS,
-            "command": {"dpId": [18, 19, 20]},
+            "command": {PARAMETER_DP_ID: [18, 19, 20]},
         },
     },
 }
@@ -157,7 +170,7 @@ class TuyaLoggingAdapter(logging.LoggerAdapter):
 
     def process(self, msg, kwargs):
         """Process log point and return output."""
-        dev_id = self.extra["device_id"]
+        dev_id = self.extra[CONF_DEVICE_ID]
         return f"[{dev_id[0:3]}...{dev_id[-3:]}] {msg}", kwargs
 
 
@@ -170,7 +183,7 @@ class ContextualLogger:
 
     def set_logger(self, logger, device_id):
         """Set base logger to use."""
-        self._logger = TuyaLoggingAdapter(logger, {"device_id": device_id})
+        self._logger = TuyaLoggingAdapter(logger, {CONF_DEVICE_ID: device_id})
 
     def debug(self, msg, *args):
         """Debug level log."""
@@ -649,22 +662,21 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
             return self.dps_cache[cid]
 
-        else:
-            self.dps_cache = {}
+        self.dps_cache = {}
 
-            for dps_range in ranges:
-                # dps 1 must always be sent, otherwise it might fail in case no dps is found
-                # in the requested range
-                self.dps_to_request = {"1": None}
-                self.add_dps_to_request(range(*dps_range))
-                try:
-                    status = await self.status()
-                    self._update_dps_cache(status)
-                except Exception as ex:
-                    self.exception("Failed to get status: %s", ex)
-                    raise
+        for dps_range in ranges:
+            # dps 1 must always be sent, otherwise it might fail in case no dps is found
+            # in the requested range
+            self.dps_to_request = {"1": None}
+            self.add_dps_to_request(range(*dps_range))
+            try:
+                status = await self.status()
+                self._update_dps_cache(status)
+            except Exception as ex:
+                self.exception("Failed to get status: %s", ex)
+                raise
 
-            return self.dps_cache
+        return self.dps_cache
 
     def add_dps_to_request(self, dp_indicies, cid=None):
         """Add a datapoint (DP) to be included in requests."""
@@ -763,27 +775,29 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         json_data = cmd_data["command"]
         command_hb = cmd_data["hexByte"]
 
-        if "gwId" in json_data:
-            json_data["gwId"] = self.id
-        if "devId" in json_data:
-            json_data["devId"] = self.id
-        if "uid" in json_data:
-            json_data["uid"] = self.id  # still use id, no separate uid
-        if "cid" in json_data:
-            json_data["cid"] = cid  # for Zigbee gateways, cid specifies the sub-device
+        if PARAMETER_GW_ID in json_data:
+            json_data[PARAMETER_GW_ID] = self.id
+        if PARAMETER_DEV_ID in json_data:
+            json_data[PARAMETER_DEV_ID] = self.id
+        if PARAMETER_UID in json_data:
+            # still use id, no separate uid
+            json_data[PARAMETER_UID] = self.id
+        if PARAMETER_CID in json_data:
+            # for Zigbee gateways, cid specifies the sub-device
+            json_data[PARAMETER_CID] = cid
         if "t" in json_data:
             json_data["t"] = str(int(time.time()))
 
         if data is not None:
-            if "dpId" in json_data:
-                json_data["dpId"] = data
+            if PARAMETER_DP_ID in json_data:
+                json_data[PARAMETER_DP_ID] = data
             else:
-                json_data["dps"] = data
+                json_data[PROPERTY_DPS] = data
         elif command_hb == COMMAND_CONTROL_NEW:
             if cid:
-                json_data["dps"] = self.dps_to_request[cid]
+                json_data[PROPERTY_DPS] = self.dps_to_request[cid]
             else:
-                json_data["dps"] = self.dps_to_request
+                json_data[PROPERTY_DPS] = self.dps_to_request
 
         payload = json.dumps(json_data).replace(" ", "").encode("utf-8")
         self.debug("Send payload: %s", payload)
@@ -822,11 +836,11 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
 
     def _update_dps_cache(self, status):
         """Updates dps status cache"""
-        if not status or "dps" not in status:
+        if not status or PROPERTY_DPS not in status:
             return
 
         if self.is_gateway:
-            cid = status["cid"]
+            cid = status[PARAMETER_CID]
             if cid not in self.sub_devices:
                 self.info(
                     "Sub-device status update ignored because cid %s is not added", cid
@@ -834,9 +848,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                 self.dps_cache["last_updated_cid"] = ""
             else:
                 self.dps_cache["last_updated_cid"] = cid
-                self.dps_cache[cid].update(status["dps"])
+                self.dps_cache[cid].update(status[PROPERTY_DPS])
         else:
-            self.dps_cache.update(status["dps"])
+            self.dps_cache.update(status[PROPERTY_DPS])
 
     def __repr__(self):
         """Return internal string representation of object."""

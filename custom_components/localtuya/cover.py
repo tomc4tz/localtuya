@@ -81,7 +81,7 @@ class LocaltuyaCover(LocalTuyaEntity, CoverEntity):
         self._state = self._stop_cmd
         self._previous_state = self._state
         self._current_cover_position = COVER_MIN_POSITION
-        print("Initialized cover [{}]".format(self.name))
+        _LOGGER.debug("Initialized cover [%s]", self.name)
 
     @property
     def supported_features(self):

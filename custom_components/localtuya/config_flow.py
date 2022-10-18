@@ -19,7 +19,7 @@ from homeassistant.const import (
 from homeassistant.core import callback
 
 from .common import async_config_entry_by_device_id, pytuya
-from .const import CONF_DPS_STRINGS  # pylint: disable=unused-import
+
 from .const import (
     CONF_LOCAL_KEY,
     CONF_PRODUCT_KEY,
@@ -29,6 +29,11 @@ from .const import (
     DATA_DISCOVERY,
     DOMAIN,
     PLATFORMS,
+    CONF_DPS_STRINGS,
+    PARAMETER_GW_ID,
+    PARAMETER_IP,
+    PARAMETER_PRODUCT_KEY,
+    PARAMETER_VERSION,
 )
 from .discovery import discover
 
@@ -77,7 +82,7 @@ DATA_POINT_SCHEMA = vol.Schema({vol.Required(FLOW_DP): int})
 
 def user_schema(devices, entries):
     """Create schema for user step."""
-    devices = {dev_id: dev["ip"] for dev_id, dev in devices.items()}
+    devices = {dev_id: dev[PARAMETER_IP] for dev_id, dev in devices.items()}
     devices.update(
         {
             ent.data[CONF_DEVICE_ID]: ent.data[CONF_FRIENDLY_NAME]
@@ -98,7 +103,7 @@ def user_schema(devices, entries):
 def sub_device_schema(devices):
     """Create schema for sub-device step."""
     device_list = [
-        f"{device['device_id']} ({device['friendly_name']})" for device in devices
+        f"{device[CONF_DEVICE_ID]} ({device[CONF_FRIENDLY_NAME]})" for device in devices
     ]
     return vol.Schema(
         {
@@ -324,7 +329,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.devices = {
             ip: dev
             for ip, dev in devices.items()
-            if dev["gwId"] not in self._async_current_ids()
+            if dev[PARAMETER_GW_ID] not in self._async_current_ids()
         }
 
         return self.async_show_form(
@@ -346,7 +351,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if self.selected_device is not None:
                     self.basic_info[CONF_PRODUCT_KEY] = self.devices[
                         self.selected_device
-                    ]["productKey"]
+                    ][PARAMETER_PRODUCT_KEY]
 
             try:
                 self.dps_strings = await validate_input(self.hass, user_input)
@@ -386,9 +391,9 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         defaults.update(user_input or {})
         if self.selected_device is not None:
             device = self.devices[self.selected_device]
-            defaults[CONF_HOST] = device.get("ip")
-            defaults[CONF_DEVICE_ID] = device.get("gwId")
-            defaults[CONF_PROTOCOL_VERSION] = device.get("version")
+            defaults[CONF_HOST] = device.get(PARAMETER_IP)
+            defaults[CONF_DEVICE_ID] = device.get(PARAMETER_GW_ID)
+            defaults[CONF_PROTOCOL_VERSION] = device.get(PARAMETER_VERSION)
 
         return self.async_show_form(
             step_id="basic_info",
@@ -428,7 +433,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Populate list of gateways to choose from
         current_entries = self.hass.config_entries.async_entries(DOMAIN)
         devices = [
-            entry.data for entry in current_entries if entry.data.get("is_gateway")
+            entry.data for entry in current_entries if entry.data.get(CONF_IS_GATEWAY)
         ]
 
         if len(devices) <= 0:
@@ -565,7 +570,7 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=schema_defaults(
                 options_schema(self.entities), **self.config_entry.data
             ),
-            description_placeholders={"device_id": device_id},
+            description_placeholders={CONF_DEVICE_ID: device_id},
         )
 
     async def async_step_entity(self, user_input=None):

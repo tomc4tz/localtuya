@@ -9,8 +9,6 @@ from homeassistant.components.climate import (
     DEFAULT_MIN_TEMP,
     DOMAIN,
     ClimateEntity,
-)
-from homeassistant.components.climate.const import (
     PRESET_AWAY,
     PRESET_ECO,
     PRESET_HOME,
@@ -19,6 +17,7 @@ from homeassistant.components.climate.const import (
     HVACMode,
     ClimateEntityFeature,
 )
+
 
 from homeassistant.const import (
     ATTR_TEMPERATURE,
@@ -176,7 +175,7 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
         self._has_presets = self.has_config(CONF_ECO_DP) or self.has_config(
             CONF_PRESET_DP
         )
-        print("Initialized climate [{}]".format(self.name))
+        _LOGGER.debug("Initialized climate [%s]", self.name)
 
     @property
     def supported_features(self):

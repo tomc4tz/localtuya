@@ -12,6 +12,11 @@ from hashlib import md5
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+from config.localtuya.custom_components.localtuya.const import (
+    PARAMETER_GW_ID,
+    PARAMETER_IP,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
 UDP_KEY = md5(b"yGAdlopoPVldABfn").digest()
@@ -71,8 +76,8 @@ class TuyaDiscovery(asyncio.DatagramProtocol):
 
     def device_found(self, device):
         """Discover a new device."""
-        if device.get("ip") not in self.devices:
-            self.devices[device.get("gwId")] = device
+        if device.get(PARAMETER_IP) not in self.devices:
+            self.devices[device.get(PARAMETER_GW_ID)] = device
             _LOGGER.debug("Discovered device: %s", device)
 
         if self._callback:
