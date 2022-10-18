@@ -56,7 +56,7 @@ from hashlib import md5
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from ...localtuya.const import (
+from custom_components.localtuya.const import (  # pylint: disable=import-error
     PARAMETER_CID,
     PARAMETER_DEV_ID,
     PARAMETER_DP_ID,
