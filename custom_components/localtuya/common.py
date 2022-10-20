@@ -560,11 +560,16 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         if event == GW_EVT_STATUS_UPDATED:
             self.status_updated(event_data)
         elif event == GW_EVT_CONNECTED:
-            self._is_connected = True
+            self.is_connected(True)
         elif event == GW_EVT_DISCONNECTED:
             self.disconnected()
         else:
             self.debug("Invalid event %s from gateway", event)
+
+    def is_connected(self, connected):
+        """Set is_connected is connected on  Tuya device."""
+        if self._is_connected != connected:
+            self._is_connected = connected
 
     def _async_dispatch_gateway_request(self, request, content):
         """Dispatches a request to the parent gateway using a retry loop"""
@@ -636,7 +641,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     @callback
     def disconnected(self):
         """Device disconnected."""
-        self._is_connected = False
+        self.is_connected(False)
         signal = f"localtuya_{self._config_entry[CONF_DEVICE_ID]}"
         async_dispatcher_send(self._hass, signal, None)
 
@@ -668,14 +673,14 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
 
         def _update_handler(status):
             """Update entity state when status was updated."""
-            update = False
+            update = True
 
             if status is None:
                 self._status = {}
-                update = True
             elif self._status != status and str(self._dp_id) in status:
                 self._status = status.copy()
-                update = True
+            else:
+                update = False
 
             if update:
                 self.status_updated()
@@ -700,7 +705,7 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
             },
             "name": self._config_entry.data[CONF_FRIENDLY_NAME],
             "manufacturer": "Tuya generic",
-            "model": self._config_entry.data.get(CONF_MODEL),  # model ,
+            "model": self._config_entry.data.get(CONF_MODEL),  # model
             "sw_version": self._config_entry.data[CONF_PROTOCOL_VERSION],
             "hw_version": self._config_entry.data.get(CONF_PRODUCT_KEY),  # product_name
         }
