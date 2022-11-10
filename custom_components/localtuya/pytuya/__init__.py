@@ -240,22 +240,15 @@ def pack_message(msg):
 
 def unpack_message(data):
     """Unpack bytes into a TuyaMessage."""
+    header_len = struct.calcsize(MESSAGE_RECV_HEADER_FMT)
+    end_len = struct.calcsize(MESSAGE_END_FMT)
 
-
-# Commented out by knifehandz 2022/02/13
-# Seems this function is no longer used
-#
-# def unpack_message(data):
-#     """Unpack bytes into a TuyaMessage."""
-#     header_len = struct.calcsize(MESSAGE_RECV_HEADER_FMT)
-#     end_len = struct.calcsize(MESSAGE_END_FMT)
-#
-#     _, seqno, cmd, _, retcode = struct.unpack(
-#         MESSAGE_RECV_HEADER_FMT, data[:header_len]
-#     )
-#     payload = data[header_len:-end_len]
-#     crc, _ = struct.unpack(MESSAGE_END_FMT, data[-end_len:])
-#     return TuyaMessage(seqno, cmd, retcode, payload, crc)
+    _, seqno, cmd, _, retcode = struct.unpack(
+        MESSAGE_RECV_HEADER_FMT, data[:header_len]
+    )
+    payload = data[header_len:-end_len]
+    crc, _ = struct.unpack(MESSAGE_END_FMT, data[-end_len:])
+    return TuyaMessage(seqno, cmd, retcode, payload, crc, False)
 
 
 class AESCipher:
@@ -553,12 +546,12 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         payload = self._generate_payload(command, dps, cid)
         dev_type = self.dev_type
 
-        # Wait for special sequence number if heartbeat
-        seqno = (
-            MessageDispatcher.HEARTBEAT_SEQNO
-            if command == ACTION_HEARTBEAT
-            else (self.seqno - 1)
-        )
+        if command == ACTION_HEARTBEAT:
+            seqno = MessageDispatcher.HEARTBEAT_SEQNO
+        elif command == ACTION_RESET:
+            seqno = MessageDispatcher.RESET_SEQNO
+        else:
+            seqno = self.seqno - 1
 
         self.transport.write(payload)
         msg = await self.dispatcher.wait_for(seqno)
@@ -629,7 +622,8 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             if self.transport is not None:
                 self.transport.write(payload)
         if self.version == 3.4:
-            self.info("Welcome version 3.4")
+            # todo
+            return
         return True
 
     async def set_dp(self, value, dp_index, cid=None):
@@ -754,6 +748,7 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             del self.dps_cache[cid]
 
     def _decode_payload(self, payload):
+
         """Decodes payload received from a Tuya device"""
         if not payload:
             payload = "{}"
@@ -776,6 +771,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                     self.dev_type,
                 )
                 return None
+        elif self.version == 3.4:
+            # todo
+            return
         else:
             raise Exception(f"Unexpected payload={payload}")
 
@@ -879,10 +877,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         if self.is_gateway:
             cid = status[PARAMETER_CID]
             if cid not in self.sub_devices:
-                self.info(
+                self.debug(
                     "Sub-device status update ignored because cid %s is not added", cid
                 )
                 self.dps_cache[STATUS_LAST_UPDATED_CID] = ""
+                self.debug("Re-add subdevice cid %s", cid)
+                self.add_sub_device(cid)
+
             else:
                 self.dps_cache[STATUS_LAST_UPDATED_CID] = cid
                 self.dps_cache[cid].update(status[PROPERTY_DPS])

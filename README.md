@@ -6,7 +6,7 @@ This custom integration updates device status via push updates instead of pollin
 
 The following Tuya device types are currently supported:
 * Switches
-* Wi-Fi smart plugs (including those with additional USB plugs)
+* Wi-Fi smart plugs
 * Lights
 * Covers
 * Fans
