@@ -8,14 +8,14 @@ from homeassistant.components.climate import (
     DEFAULT_MAX_TEMP,
     DEFAULT_MIN_TEMP,
     DOMAIN,
-    ClimateEntity,
     PRESET_AWAY,
     PRESET_ECO,
     PRESET_HOME,
     PRESET_NONE,
+    ClimateEntity,
+    ClimateEntityFeature,
     HVACAction,
     HVACMode,
-    ClimateEntityFeature,
 )
 
 
@@ -32,13 +32,13 @@ from homeassistant.const import (
 from .common import LocalTuyaEntity, async_setup_entry
 from .const import (
     CONF_CURRENT_TEMPERATURE_DP,
-    CONF_HVAC_MODE_DP,
-    CONF_HVAC_MODE_SET,
+    CONF_ECO_DP,
+    CONF_ECO_VALUE,
     CONF_HEURISTIC_ACTION,
     CONF_HVAC_ACTION_DP,
     CONF_HVAC_ACTION_SET,
-    CONF_ECO_DP,
-    CONF_ECO_VALUE,
+    CONF_HVAC_MODE_DP,
+    CONF_HVAC_MODE_SET,
     CONF_MAX_TEMP_DP,
     CONF_MIN_TEMP_DP,
     CONF_PRECISION,
@@ -68,6 +68,10 @@ HVAC_MODE_SETS = {
     },
     "True/False": {
         HVACMode.HEAT: True,
+    },
+    "1/0": {
+        HVACMode.HEAT: "1",
+        HVACMode.AUTO: "0",
     },
 }
 HVAC_ACTION_SETS = {
