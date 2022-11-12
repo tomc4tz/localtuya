@@ -748,7 +748,6 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             del self.dps_cache[cid]
 
     def _decode_payload(self, payload):
-
         """Decodes payload received from a Tuya device"""
         if not payload:
             payload = "{}"
