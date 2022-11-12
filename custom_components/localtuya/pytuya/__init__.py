@@ -41,21 +41,20 @@ Credits
    Updated pytuya to support devices with Device IDs of 22 characters
 """
 
+from abc import ABC, abstractmethod
 import asyncio
 import base64
 import binascii
+from collections import namedtuple
+from hashlib import md5
 import json
 import logging
 import struct
 import time
 import weakref
-from abc import ABC, abstractmethod
-from collections import namedtuple
-from hashlib import md5
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-
 from custom_components.localtuya.const import (  # pylint: disable=import-error
     PARAMETER_CID,
     PARAMETER_DEV_ID,
@@ -65,6 +64,7 @@ from custom_components.localtuya.const import (  # pylint: disable=import-error
     PROPERTY_DPS,
     STATUS_LAST_UPDATED_CID,
 )
+
 from homeassistant.const import CONF_DEVICE_ID
 
 version_tuple = (9, 0, 0)
@@ -80,6 +80,7 @@ ACTION_SET = "set"
 ACTION_STATUS = "status"
 ACTION_HEARTBEAT = "heartbeat"
 ACTION_UPDATEDPS = "updatedps"  # Request refresh of DPS
+ACTION_RESET = "reset"
 
 PROTOCOL_VERSION_BYTES_31 = b"3.1"
 PROTOCOL_VERSION_BYTES_33 = b"3.3"
@@ -146,6 +147,16 @@ PAYLOAD_DICT = {
         ACTION_UPDATEDPS: {
             "hexByte": COMMAND_UPDATE_DPS,
             "command": {PARAMETER_DP_ID: [18, 19, 20]},
+        },
+        ACTION_RESET: {
+            "hexByte": COMMAND_UPDATE_DPS,
+            "command": {
+                PARAMETER_GW_ID: "",
+                PARAMETER_DEV_ID: "",
+                PARAMETER_UID: "",
+                "t": "",
+                PARAMETER_DP_ID: [18, 19, 20],
+            },
         },
     },
     DEV_TYPE_0D: {
@@ -227,20 +238,17 @@ def pack_message(msg):
     return buffer
 
 
-# Commented out by knifehandz 2022/02/13
-# Seems this function is no longer used
-#
-# def unpack_message(data):
-#     """Unpack bytes into a TuyaMessage."""
-#     header_len = struct.calcsize(MESSAGE_RECV_HEADER_FMT)
-#     end_len = struct.calcsize(MESSAGE_END_FMT)
-#
-#     _, seqno, cmd, _, retcode = struct.unpack(
-#         MESSAGE_RECV_HEADER_FMT, data[:header_len]
-#     )
-#     payload = data[header_len:-end_len]
-#     crc, _ = struct.unpack(MESSAGE_END_FMT, data[-end_len:])
-#     return TuyaMessage(seqno, cmd, retcode, payload, crc)
+def unpack_message(data):
+    """Unpack bytes into a TuyaMessage."""
+    header_len = struct.calcsize(MESSAGE_RECV_HEADER_FMT)
+    end_len = struct.calcsize(MESSAGE_END_FMT)
+
+    _, seqno, cmd, _, retcode = struct.unpack(
+        MESSAGE_RECV_HEADER_FMT, data[:header_len]
+    )
+    payload = data[header_len:-end_len]
+    crc, _ = struct.unpack(MESSAGE_END_FMT, data[-end_len:])
+    return TuyaMessage(seqno, cmd, retcode, payload, crc, False)
 
 
 class AESCipher:
@@ -280,6 +288,7 @@ class MessageDispatcher(ContextualLogger):
     # Heartbeats always respond with sequence number 0, so they can't be waited for like
     # other messages. This is a hack to allow waiting for heartbeats.
     HEARTBEAT_SEQNO = -100
+    RESET_SEQNO = -101
 
     def __init__(self, dev_id, listener):
         """Initialize a new MessageBuffer."""
@@ -369,10 +378,20 @@ class MessageDispatcher(ContextualLogger):
                 self.listeners[self.HEARTBEAT_SEQNO] = msg
                 sem.release()
         elif msg.cmd == COMMAND_UPDATE_DPS:
-            self.debug("Got normal updatedps response")
+            self.info("Got normal updatedps response")
+            if self.RESET_SEQNO in self.listeners:
+                sem = self.listeners[self.RESET_SEQNO]
+                self.listeners[self.RESET_SEQNO] = msg
+                sem.release()
         elif msg.cmd == PUSH_STATUS:
-            self.debug("Got status update")
-            self.listener(msg)
+            if self.RESET_SEQNO in self.listeners:
+                self.info("Got reset status update")
+                sem = self.listeners[self.RESET_SEQNO]
+                self.listeners[self.RESET_SEQNO] = msg
+                sem.release()
+            else:
+                self.debug("Got status update")
+                self.listener(msg)
         elif msg.cmd == COMMAND_DP_QUERY_NEW:
             self.debug("Got dp_query_new response")
         elif msg.cmd == COMMAND_CONTROL_NEW:
@@ -527,12 +546,12 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         payload = self._generate_payload(command, dps, cid)
         dev_type = self.dev_type
 
-        # Wait for special sequence number if heartbeat
-        seqno = (
-            MessageDispatcher.HEARTBEAT_SEQNO
-            if command == ACTION_HEARTBEAT
-            else (self.seqno - 1)
-        )
+        if command == ACTION_HEARTBEAT:
+            seqno = MessageDispatcher.HEARTBEAT_SEQNO
+        elif command == ACTION_RESET:
+            seqno = MessageDispatcher.RESET_SEQNO
+        else:
+            seqno = self.seqno - 1
 
         self.transport.write(payload)
         msg = await self.dispatcher.wait_for(seqno)
@@ -602,6 +621,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             payload = self._generate_payload(ACTION_UPDATEDPS, dps)
             if self.transport is not None:
                 self.transport.write(payload)
+        if self.version == 3.4:
+            # todo
+            return
         return True
 
     async def set_dp(self, value, dp_index, cid=None):
@@ -673,9 +695,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             try:
                 status = await self.status()
                 self._update_dps_cache(status)
-            except Exception as ex:
+            except Exception as ex:  # pylint: disable=broad-except)
                 self.exception("Failed to get status: %s", ex)
-                raise
+                if self.version != 3.4:
+                    raise
+                data = {"dps": {}}
+                for i in range(1, 100):
+                    data["dps"][i] = 0
 
         return self.dps_cache
 
@@ -744,6 +770,9 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
                     self.dev_type,
                 )
                 return None
+        elif self.version == 3.4:
+            # todo
+            return
         else:
             raise Exception(f"Unexpected payload={payload}")
 
@@ -752,10 +781,11 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         self.debug("Decrypted payload: %s", payload)
         return json.loads(payload)
 
-    def _generate_payload(self, command, data=None, cid=None):
+    def _generate_payload(
+        self, command, data=None, cid=None, gwId=None, devId=None, uid=None
+    ):
         """
         Generate the payload to send.
-
         Args:
             command(str): The type of command.
                 This is one of the entries from payload_dict
@@ -846,10 +876,13 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
         if self.is_gateway:
             cid = status[PARAMETER_CID]
             if cid not in self.sub_devices:
-                self.info(
+                self.debug(
                     "Sub-device status update ignored because cid %s is not added", cid
                 )
                 self.dps_cache[STATUS_LAST_UPDATED_CID] = ""
+                self.debug("Re-add subdevice cid %s", cid)
+                self.add_sub_device(cid)
+
             else:
                 self.dps_cache[STATUS_LAST_UPDATED_CID] = cid
                 self.dps_cache[cid].update(status[PROPERTY_DPS])
