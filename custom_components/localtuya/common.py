@@ -686,14 +686,14 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
 
         def _update_handler(status):
             """Update entity state when status was updated."""
-            update = True
+            update = False
 
             if status is None:
                 self._status = {}
+                update = True
             elif self._status != status and str(self._dp_id) in status:
                 self._status = status.copy()
-            else:
-                update = False
+                update = True
 
             if update:
                 self.status_updated()
