@@ -291,11 +291,17 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         )
 
     def __get_color_mode(self):
-        return (
-            self.dps_conf(CONF_COLOR_MODE)
-            if self.has_config(CONF_COLOR_MODE)
-            else MODE_WHITE
-        )
+        color_mode = self.dps_conf(CONF_COLOR_MODE)
+
+        if self.has_config(CONF_COLOR_MODE) and color_mode in [
+            MODE_COLOR,
+            MODE_SCENE,
+            MODE_MUSIC,
+            MODE_WHITE,
+        ]:
+            return color_mode
+
+        return MODE_WHITE
 
     async def async_turn_on(self, **kwargs):
         """Turn on or control the light."""
@@ -409,7 +415,9 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         supported = self.supported_features
         self._effect = None
         if supported & SUPPORT_BRIGHTNESS and self.has_config(CONF_BRIGHTNESS):
-            self._brightness = self.dps_conf(CONF_BRIGHTNESS)
+            brightness = self.dps_conf(CONF_BRIGHTNESS)
+            if brightness is not None:
+                self._brightness = brightness
 
         if supported & SUPPORT_COLOR:
             color = self.dps_conf(CONF_COLOR)
