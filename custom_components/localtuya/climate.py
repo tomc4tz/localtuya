@@ -175,7 +175,7 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             self._config.get(CONF_HVAC_ACTION_SET), {}
         )
         self._conf_eco_dp = self._config.get(CONF_ECO_DP)
-        self._conf_eco_value = self._config.get(CONF_ECO_VALUE, "ECO")
+        self._conf_eco_value = self._config.get(CONF_ECO_VALUE, PRESET_ECO)
         self._has_presets = self.has_config(CONF_ECO_DP) or self.has_config(
             CONF_PRESET_DP
         )
@@ -340,14 +340,20 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
     @property
     def min_temp(self):
         """Return the minimum temperature."""
-        if self.has_config(CONF_MIN_TEMP_DP):
+        if (
+            self.has_config(CONF_MIN_TEMP_DP)
+            and self.dps_conf(CONF_MIN_TEMP_DP) is not None
+        ):
             return self.dps_conf(CONF_MIN_TEMP_DP)
         return self._config[CONF_TEMP_MIN]
 
     @property
     def max_temp(self):
         """Return the maximum temperature."""
-        if self.has_config(CONF_MAX_TEMP_DP):
+        if (
+            self.has_config(CONF_MAX_TEMP_DP)
+            and self.dps_conf(CONF_MAX_TEMP_DP) is not None
+        ):
             return self.dps_conf(CONF_MAX_TEMP_DP)
         return self._config[CONF_TEMP_MAX]
 
