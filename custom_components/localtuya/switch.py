@@ -57,13 +57,17 @@ class LocaltuyaSwitch(LocalTuyaEntity, SwitchEntity):
         """Return device state attributes."""
         attrs = {}
         if self.has_config(CONF_CURRENT):
-            attrs[ATTR_CURRENT] = self.dps(self._config[CONF_CURRENT])
+            current = self.dps(self._config[CONF_CURRENT])
+            if current is not None:
+                attrs[ATTR_CURRENT] = current
         if self.has_config(CONF_CURRENT_CONSUMPTION):
-            attrs[ATTR_CURRENT_CONSUMPTION] = (
-                self.dps(self._config[CONF_CURRENT_CONSUMPTION]) / 10
-            )
+            consumption = self.dps(self._config[CONF_CURRENT_CONSUMPTION])
+            if consumption is not None:
+                attrs[ATTR_CURRENT_CONSUMPTION] = consumption / 10
         if self.has_config(CONF_VOLTAGE):
-            attrs[ATTR_VOLTAGE] = self.dps(self._config[CONF_VOLTAGE]) / 10
+            voltage = self.dps(self._config[CONF_VOLTAGE])
+            if voltage is not None:
+                attrs[ATTR_VOLTAGE] = voltage / 10
         # Store the state
         if self._state is not None:
             attrs[ATTR_STATE] = self._state
@@ -81,7 +85,9 @@ class LocaltuyaSwitch(LocalTuyaEntity, SwitchEntity):
 
     def status_updated(self):
         """Device status was updated."""
-        self._state = self.dps(self._dp_id)
+        state = self.dps(self._dp_id)
+        if state is not None:
+            self._state = state
 
     # Default value is the "OFF" state
     def entity_default_value(self):

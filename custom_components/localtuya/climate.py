@@ -66,6 +66,10 @@ HVAC_MODE_SETS = {
         HVACMode.HEAT: "Manual",
         HVACMode.AUTO: "Program",
     },
+    "m/p": {
+        HVACMode.HEAT: "m",
+        HVACMode.AUTO: "p",
+    },
     "True/False": {
         HVACMode.HEAT: True,
     },
@@ -175,7 +179,7 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
             self._config.get(CONF_HVAC_ACTION_SET), {}
         )
         self._conf_eco_dp = self._config.get(CONF_ECO_DP)
-        self._conf_eco_value = self._config.get(CONF_ECO_VALUE, "ECO")
+        self._conf_eco_value = self._config.get(CONF_ECO_VALUE, PRESET_ECO)
         self._has_presets = self.has_config(CONF_ECO_DP) or self.has_config(
             CONF_PRESET_DP
         )
@@ -341,29 +345,36 @@ class LocaltuyaClimate(LocalTuyaEntity, ClimateEntity):
     def min_temp(self):
         """Return the minimum temperature."""
         if self.has_config(CONF_MIN_TEMP_DP):
-            return self.dps_conf(CONF_MIN_TEMP_DP)
+            min_temp_dp = self.dps_conf(CONF_MIN_TEMP_DP)
+            if min_temp_dp is not None:
+                return min_temp_dp
         return self._config[CONF_TEMP_MIN]
 
     @property
     def max_temp(self):
         """Return the maximum temperature."""
         if self.has_config(CONF_MAX_TEMP_DP):
-            return self.dps_conf(CONF_MAX_TEMP_DP)
+            max_temp_dp = self.dps_conf(CONF_MAX_TEMP_DP)
+            if max_temp_dp is not None:
+                return max_temp_dp
         return self._config[CONF_TEMP_MAX]
 
     def status_updated(self):
         """Device status was updated."""
-        self._state = self.dps(self._dp_id)
+        state = self.dps(self._dp_id)
+
+        if state is not None:
+            self._state = state
 
         if self.has_config(CONF_TARGET_TEMPERATURE_DP):
-            self._target_temperature = (
-                self.dps_conf(CONF_TARGET_TEMPERATURE_DP) * self._target_precision
-            )
+            target_temp_dp = self.dps_conf(CONF_TARGET_TEMPERATURE_DP)
+            if target_temp_dp is not None:
+                self._target_temperature = target_temp_dp * self._target_precision
 
         if self.has_config(CONF_CURRENT_TEMPERATURE_DP):
-            self._current_temperature = (
-                self.dps_conf(CONF_CURRENT_TEMPERATURE_DP) * self._precision
-            )
+            current_temp_dp = self.dps_conf(CONF_CURRENT_TEMPERATURE_DP)
+            if current_temp_dp is not None:
+                self._current_temperature = current_temp_dp * self._precision
 
         if self._has_presets:
             if (

@@ -233,11 +233,13 @@ logger:
 # To-do list:
 
 * Create a (good and precise) sensor (counter) for Energy (kWh) -not just Power, but based on it-.
-      Ideas: Use: https://www.home-assistant.io/components/integration/ and https://www.home-assistant.io/components/utility_meter/
+      Ideas: Use: https://www.home-assistant.io/integrations/integration/ and https://www.home-assistant.io/integrations/utility_meter/
 
 * Everything listed in https://github.com/rospogrigio/localtuya-homeassistant/issues/15
 
 # Thanks to:
+
+Rospogrigio https://github.com/rospogrigio/ This branch is a fork of them.
 
 NameLessJedi https://github.com/NameLessJedi/localtuya-homeassistant and mileperhour https://github.com/mileperhour/localtuya-homeassistant being the major sources of inspiration, and whose code for switches is substantially unchanged.
 

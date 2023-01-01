@@ -101,6 +101,8 @@ UPDATE_DPS_WHITELIST = [18, 19, 20]  # Socket (Wi-Fi)
 
 DEV_TYPE_0A = "type_0a"  # DP_QUERY
 DEV_TYPE_0D = "type_0d"  # CONTROL_NEW
+HEXBYTE = "hexByte"
+COMMAND = "command"
 
 COMMAND_DP_QUERY = 0x0A
 COMMAND_CONTROL_NEW = 0x0D
@@ -123,34 +125,34 @@ GATEWAY_PAYLOAD_DICT = {
     # TYPE_0A should never be used with gateways
     DEV_TYPE_0D: {
         ACTION_STATUS: {
-            "hexByte": COMMAND_DP_QUERY_NEW,
-            "command": {PARAMETER_CID: ""},
+            HEXBYTE: COMMAND_DP_QUERY_NEW,
+            COMMAND: {PARAMETER_CID: ""},
         },
         ACTION_SET: {
-            "hexByte": COMMAND_CONTROL_NEW,
-            "command": {PARAMETER_CID: "", "ctype": 0},
+            HEXBYTE: COMMAND_CONTROL_NEW,
+            COMMAND: {PARAMETER_CID: "", "ctype": 0},
         },
-        ACTION_HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
+        ACTION_HEARTBEAT: {HEXBYTE: COMMAND_HEARTBEAT, COMMAND: {}},
     },
 }
 PAYLOAD_DICT = {
     DEV_TYPE_0A: {
         ACTION_STATUS: {
-            "hexByte": COMMAND_DP_QUERY,
-            "command": {PARAMETER_GW_ID: "", PARAMETER_DEV_ID: "", PARAMETER_UID: ""},
+            HEXBYTE: COMMAND_DP_QUERY,
+            COMMAND: {PARAMETER_GW_ID: "", PARAMETER_DEV_ID: "", PARAMETER_UID: ""},
         },
         ACTION_SET: {
-            "hexByte": COMMAND_SET,
-            "command": {PARAMETER_DEV_ID: "", PARAMETER_UID: "", "t": ""},
+            HEXBYTE: COMMAND_SET,
+            COMMAND: {PARAMETER_DEV_ID: "", PARAMETER_UID: "", "t": ""},
         },
-        ACTION_HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
+        ACTION_HEARTBEAT: {HEXBYTE: COMMAND_HEARTBEAT, COMMAND: {}},
         ACTION_UPDATEDPS: {
-            "hexByte": COMMAND_UPDATE_DPS,
-            "command": {PARAMETER_DP_ID: [18, 19, 20]},
+            HEXBYTE: COMMAND_UPDATE_DPS,
+            COMMAND: {PARAMETER_DP_ID: [18, 19, 20]},
         },
         ACTION_RESET: {
-            "hexByte": COMMAND_UPDATE_DPS,
-            "command": {
+            HEXBYTE: COMMAND_UPDATE_DPS,
+            COMMAND: {
                 PARAMETER_GW_ID: "",
                 PARAMETER_DEV_ID: "",
                 PARAMETER_UID: "",
@@ -161,17 +163,17 @@ PAYLOAD_DICT = {
     },
     DEV_TYPE_0D: {
         ACTION_STATUS: {
-            "hexByte": COMMAND_CONTROL_NEW,
-            "command": {PARAMETER_DEV_ID: "", PARAMETER_UID: "", "t": ""},
+            HEXBYTE: COMMAND_CONTROL_NEW,
+            COMMAND: {PARAMETER_DEV_ID: "", PARAMETER_UID: "", "t": ""},
         },
         ACTION_SET: {
-            "hexByte": COMMAND_SET,
-            "command": {PARAMETER_DEV_ID: "", PARAMETER_UID: "", "t": ""},
+            HEXBYTE: COMMAND_SET,
+            COMMAND: {PARAMETER_DEV_ID: "", PARAMETER_UID: "", "t": ""},
         },
-        ACTION_HEARTBEAT: {"hexByte": COMMAND_HEARTBEAT, "command": {}},
+        ACTION_HEARTBEAT: {HEXBYTE: COMMAND_HEARTBEAT, COMMAND: {}},
         ACTION_UPDATEDPS: {
-            "hexByte": COMMAND_UPDATE_DPS,
-            "command": {PARAMETER_DP_ID: [18, 19, 20]},
+            HEXBYTE: COMMAND_UPDATE_DPS,
+            COMMAND: {PARAMETER_DP_ID: [18, 19, 20]},
         },
     },
 }
@@ -263,7 +265,11 @@ class AESCipher:
         """Encrypt data to be sent to device."""
         encryptor = self.cipher.encryptor()
         crypted_text = encryptor.update(self._pad(raw)) + encryptor.finalize()
-        return base64.b64encode(crypted_text) if use_base64 else crypted_text
+
+        if use_base64:
+            return base64.b64encode(crypted_text)
+        else:
+            return crypted_text
 
     def decrypt(self, enc, use_base64=True):
         """Decrypt data from device."""
@@ -806,8 +812,8 @@ class TuyaProtocol(asyncio.Protocol, ContextualLogger):
             payload_dict = PAYLOAD_DICT
 
         cmd_data = payload_dict[self.dev_type][command]
-        json_data = cmd_data["command"]
-        command_hb = cmd_data["hexByte"]
+        json_data = cmd_data[COMMAND]
+        command_hb = cmd_data[HEXBYTE]
 
         if PARAMETER_GW_ID in json_data:
             json_data[PARAMETER_GW_ID] = self.id

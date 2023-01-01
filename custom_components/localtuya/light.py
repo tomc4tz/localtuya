@@ -94,9 +94,23 @@ SCENE_LIST_RGB_1000 = {
 
 def map_range(value, from_lower, from_upper, to_lower, to_upper):
     """Map a value in one range to another."""
-    mapped = (value - from_lower) * (to_upper - to_lower) / (
-        from_upper - from_lower
-    ) + to_lower
+    if (
+        value is None
+        or from_lower is None
+        or from_upper is None
+        or to_lower is None
+        or to_upper is None
+    ):
+        return
+
+    lower_value = value - from_lower
+    upper_value = to_upper - to_lower
+    from_range = from_upper - from_lower
+
+    if lower_value is None or upper_value is None or from_range is None:
+        return
+
+    mapped = lower_value * upper_value / (from_range) + to_lower
     return round(min(max(mapped, to_lower), to_upper))
 
 
@@ -212,13 +226,18 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 if self._color_temp_reverse
                 else self._color_temp
             )
-            return int(
-                self._max_mired
-                - (
-                    ((self._max_mired - self._min_mired) / self._upper_color_temp)
-                    * color_temp_value
-                )
-            )
+
+            if (
+                self._max_mired is None
+                or self._min_mired is None
+                or self._upper_color_temp is None
+            ):
+                return
+
+            value = (self._max_mired - self._min_mired) / self._upper_color_temp
+
+            if value is not None and color_temp_value is not None:
+                return int(self._max_mired - (value * color_temp_value))
         return None
 
     @property
@@ -291,11 +310,17 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
         )
 
     def __get_color_mode(self):
-        return (
-            self.dps_conf(CONF_COLOR_MODE)
-            if self.has_config(CONF_COLOR_MODE)
-            else MODE_WHITE
-        )
+        color_mode = self.dps_conf(CONF_COLOR_MODE)
+
+        if self.has_config(CONF_COLOR_MODE) and color_mode in [
+            MODE_COLOR,
+            MODE_SCENE,
+            MODE_MUSIC,
+            MODE_WHITE,
+        ]:
+            return color_mode
+
+        return MODE_WHITE
 
     async def async_turn_on(self, **kwargs):
         """Turn on or control the light."""
@@ -386,14 +411,21 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
                 mired = self._min_mired
             elif mired > self._max_mired:
                 mired = self._max_mired
-            color_temp = int(
-                self._upper_color_temp
-                - (self._upper_color_temp / (self._max_mired - self._min_mired))
-                * (mired - self._min_mired)
-            )
+
+            if (
+                self._upper_color_temp is not None
+                and self._min_mired is not None
+                and self._max_mired is not None
+            ):
+                color_temp = int(
+                    self._upper_color_temp
+                    - (self._upper_color_temp / (self._max_mired - self._min_mired))
+                    * (mired - self._min_mired)
+                )
+                states[self._config.get(CONF_COLOR_TEMP)] = color_temp
+
             states[self._config.get(CONF_COLOR_MODE)] = MODE_WHITE
             states[self._config.get(CONF_BRIGHTNESS)] = brightness
-            states[self._config.get(CONF_COLOR_TEMP)] = color_temp
         await self._device.set_dps(states)
 
     async def async_turn_off(self, **kwargs):
@@ -402,11 +434,16 @@ class LocaltuyaLight(LocalTuyaEntity, LightEntity):
 
     def status_updated(self):
         """Device status was updated."""
-        self._state = self.dps(self._dp_id)
+        state = self.dps(self._dp_id)
+        if state is not None:
+            self._state = state
+
         supported = self.supported_features
         self._effect = None
         if supported & SUPPORT_BRIGHTNESS and self.has_config(CONF_BRIGHTNESS):
-            self._brightness = self.dps_conf(CONF_BRIGHTNESS)
+            brightness = self.dps_conf(CONF_BRIGHTNESS)
+            if brightness is not None:
+                self._brightness = brightness
 
         if supported & SUPPORT_COLOR:
             color = self.dps_conf(CONF_COLOR)
