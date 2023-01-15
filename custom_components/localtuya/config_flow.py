@@ -133,6 +133,28 @@ def options_schema(entities):
             vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
             vol.Optional(CONF_SCAN_INTERVAL): int,
             vol.Optional(CONF_IS_GATEWAY, default=False): cv.boolean,
+            vol.Optional(
+                CONF_ENTITIES, description={"suggested_value": entity_names}
+            ): cv.multi_select(entity_names),
+            vol.Optional(CONF_PRODUCT_KEY): str,
+        }
+    )
+
+
+def options_schema_sub_device(entities):
+    """Create schema for sub_device options."""
+    entity_names = [
+        f"{entity[CONF_ID]} {entity[CONF_FRIENDLY_NAME]}" for entity in entities
+    ]
+
+    return vol.Schema(
+        {
+            vol.Required(CONF_FRIENDLY_NAME): str,
+            # vol.Required(CONF_HOST): str,
+            # vol.Required(CONF_LOCAL_KEY): str,
+            vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
+            # vol.Optional(CONF_SCAN_INTERVAL): int,
+            # vol.Optional(CONF_IS_GATEWAY, default=False): cv.boolean,
             vol.Required(
                 CONF_ENTITIES, description={"suggested_value": entity_names}
             ): cv.multi_select(entity_names),
@@ -540,8 +562,12 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         """Initialize localtuya options flow."""
         self.config_entry = config_entry
         self.dps_strings = config_entry.data.get(CONF_DPS_STRINGS, gen_dps_strings())
+        self.parent_gateway = None
+        self.entities = []
         if not config_entry.data.get(CONF_IS_GATEWAY):
             self.entities = config_entry.data[CONF_ENTITIES]
+            if config_entry.data.get(CONF_PARENT_GATEWAY):
+                self.parent_gateway = config_entry.data.get(CONF_PARENT_GATEWAY)
         self.data = None
 
     async def async_step_init(self, user_input=None):
@@ -552,8 +578,25 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             self.data.update(
                 {
                     CONF_DEVICE_ID: device_id,
-                    CONF_DPS_STRINGS: self.dps_strings,
+                }
+            )
+            if self.config_entry.data.get(CONF_IS_GATEWAY):
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    title=self.data[CONF_FRIENDLY_NAME],
+                    data=self.data,
+                )
+                return self.async_create_entry(title="", data={})
+            if self.parent_gateway:
+                 self.data.update(
+                    {
+                         CONF_PARENT_GATEWAY: self.parent_gateway,
+                    }
+                 )
+            self.data.update(
+                {
                     CONF_ENTITIES: [],
+                    CONF_DPS_STRINGS: self.dps_strings,
                 }
             )
             if len(user_input[CONF_ENTITIES]) > 0:
@@ -571,6 +614,15 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         if self.config_entry.source == config_entries.SOURCE_IMPORT:
             return await self.async_step_yaml_import()
 
+        if self.parent_gateway is not None:
+            return self.async_show_form(
+                step_id="init",
+                data_schema=schema_defaults(
+                    options_schema_sub_device(self.entities), **self.config_entry.data
+                ),
+                description_placeholders={CONF_DEVICE_ID: device_id},
+            )
+        
         return self.async_show_form(
             step_id="init",
             data_schema=schema_defaults(
