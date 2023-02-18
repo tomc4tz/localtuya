@@ -3,4 +3,4 @@ __pycache__
 .tox
 tuyadebug/
 .pre-commit-config.yaml
-asdasd
+.DS_Store
