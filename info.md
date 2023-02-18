@@ -1,6 +1,5 @@
 revert to some old working version!
 
-[![](https://img.shields.io/github/release/leeyuentuen/localtuya/all.svg?style=for-the-badge)] ?
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 [![](https://img.shields.io/badge/MAINTAINER-%40leeyuentuen-green?style=for-the-badge)](https://github.com/leeyuentuen)
 
