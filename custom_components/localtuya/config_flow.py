@@ -13,14 +13,13 @@ from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
     CONF_ID,
-    CONF_MODEL,
     CONF_PLATFORM,
     CONF_SCAN_INTERVAL,
 )
 from homeassistant.core import callback
 
 from .common import async_config_entry_by_device_id, pytuya
-
+from .const import CONF_DPS_STRINGS  # pylint: disable=unused-import
 from .const import (
     CONF_LOCAL_KEY,
     CONF_PRODUCT_KEY,
@@ -30,11 +29,6 @@ from .const import (
     DATA_DISCOVERY,
     DOMAIN,
     PLATFORMS,
-    CONF_DPS_STRINGS,
-    PARAMETER_GW_ID,
-    PARAMETER_IP,
-    PARAMETER_PRODUCT_KEY,
-    PARAMETER_VERSION,
 )
 from .discovery import discover
 
@@ -58,8 +52,6 @@ BASIC_INFO_SCHEMA = vol.Schema(
         vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
         vol.Optional(CONF_IS_GATEWAY): cv.boolean,
         vol.Optional(CONF_SCAN_INTERVAL): int,
-        vol.Optional(CONF_PRODUCT_KEY): cv.string,
-        vol.Optional(CONF_MODEL): cv.string,
     }
 )
 
@@ -73,8 +65,6 @@ DEVICE_SCHEMA = vol.Schema(
         vol.Optional(CONF_LOCAL_KEY): cv.string,
         vol.Optional(CONF_IS_GATEWAY): cv.boolean,
         vol.Optional(CONF_PARENT_GATEWAY): cv.string,
-        vol.Optional(CONF_PRODUCT_KEY): cv.string,
-        vol.Optional(CONF_MODEL): cv.string,
     },
 )
 
@@ -82,12 +72,14 @@ PICK_ENTITY_SCHEMA = vol.Schema(
     {vol.Required(PLATFORM_TO_ADD, default=PLATFORMS[0]): vol.In(PLATFORMS)}
 )
 
-DATA_POINT_SCHEMA = vol.Schema({vol.Required(FLOW_DP): int})
+DATA_POINT_SCHEMA = vol.Schema(
+    {vol.Required(FLOW_DP): int}
+)
 
 
 def user_schema(devices, entries):
     """Create schema for user step."""
-    devices = {dev_id: dev[PARAMETER_IP] for dev_id, dev in devices.items()}
+    devices = {dev_id: dev["ip"] for dev_id, dev in devices.items()}
     devices.update(
         {
             ent.data[CONF_DEVICE_ID]: ent.data[CONF_FRIENDLY_NAME]
@@ -97,25 +89,18 @@ def user_schema(devices, entries):
     )
     device_list = [f"{key} ({value})" for key, value in devices.items()]
     return vol.Schema(
-        {
-            vol.Required(DISCOVERED_DEVICE): vol.In(
-                device_list + [CUSTOM_DEVICE, CUSTOM_SUB_DEVICE]
-            )
-        }
+        {vol.Required(DISCOVERED_DEVICE): vol.In(device_list + [CUSTOM_DEVICE, CUSTOM_SUB_DEVICE])}
     )
 
 
 def sub_device_schema(devices):
     """Create schema for sub-device step."""
-    device_list = [
-        f"{device[CONF_DEVICE_ID]} ({device[CONF_FRIENDLY_NAME]})" for device in devices
-    ]
+    device_list = [f"{device['device_id']} ({device['friendly_name']})" for device in devices]
     return vol.Schema(
         {
             vol.Required(CONF_PARENT_GATEWAY): vol.In(device_list),
             vol.Required(CONF_FRIENDLY_NAME): cv.string,
             vol.Required(CONF_DEVICE_ID): cv.string,
-            vol.Optional(CONF_PRODUCT_KEY): str,
         },
     )
 
@@ -133,32 +118,9 @@ def options_schema(entities):
             vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
             vol.Optional(CONF_SCAN_INTERVAL): int,
             vol.Optional(CONF_IS_GATEWAY, default=False): cv.boolean,
-            vol.Optional(
-                CONF_ENTITIES, description={"suggested_value": entity_names}
-            ): cv.multi_select(entity_names),
-            vol.Optional(CONF_PRODUCT_KEY): str,
-        }
-    )
-
-
-def options_schema_sub_device(entities):
-    """Create schema for sub_device options."""
-    entity_names = [
-        f"{entity[CONF_ID]} {entity[CONF_FRIENDLY_NAME]}" for entity in entities
-    ]
-
-    return vol.Schema(
-        {
-            vol.Required(CONF_FRIENDLY_NAME): str,
-            # vol.Required(CONF_HOST): str,
-            # vol.Required(CONF_LOCAL_KEY): str,
-            vol.Required(CONF_PROTOCOL_VERSION, default="3.3"): vol.In(["3.1", "3.3"]),
-            # vol.Optional(CONF_SCAN_INTERVAL): int,
-            # vol.Optional(CONF_IS_GATEWAY, default=False): cv.boolean,
             vol.Required(
                 CONF_ENTITIES, description={"suggested_value": entity_names}
             ): cv.multi_select(entity_names),
-            vol.Optional(CONF_PRODUCT_KEY): str,
         }
     )
 
@@ -233,7 +195,7 @@ def validate_config_schema(config):
         else:
             if not device.get(CONF_HOST):
                 raise vol.Invalid("Host not specified")
-            if not device.get(CONF_LOCAL_KEY):
+            elif not device.get(CONF_LOCAL_KEY):
                 raise vol.Invalid("Local key not specified")
 
     return config
@@ -267,15 +229,13 @@ async def validate_input(hass: core.HomeAssistant, data):
     interface = None
     try:
         if data.get(CONF_PARENT_GATEWAY):
-            parent_dev = async_config_entry_by_device_id(
-                hass, data[CONF_PARENT_GATEWAY]
-            )
+            parent_dev = async_config_entry_by_device_id(hass, data[CONF_PARENT_GATEWAY])
             interface = await pytuya.connect(
                 parent_dev.data[CONF_HOST],
                 parent_dev.data[CONF_DEVICE_ID],
                 parent_dev.data[CONF_LOCAL_KEY],
                 float(parent_dev.data[CONF_PROTOCOL_VERSION]),
-                is_gateway=True,
+                is_gateway=True
             )
 
             interface.add_sub_device(data[CONF_DEVICE_ID])
@@ -352,13 +312,13 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     errors["base"] = "discovery_failed"
             except Exception:  # pylint: disable= broad-except
-                _LOGGER.exception("Discovery failed")
+                _LOGGER.exception("discovery failed")
                 errors["base"] = "discovery_failed"
 
         self.devices = {
             ip: dev
             for ip, dev in devices.items()
-            if dev[PARAMETER_GW_ID] not in self._async_current_ids()
+            if dev["gwId"] not in self._async_current_ids()
         }
 
         return self.async_show_form(
@@ -380,7 +340,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if self.selected_device is not None:
                     self.basic_info[CONF_PRODUCT_KEY] = self.devices[
                         self.selected_device
-                    ][PARAMETER_PRODUCT_KEY]
+                    ]["productKey"]
 
             try:
                 self.dps_strings = await validate_input(self.hass, user_input)
@@ -390,12 +350,10 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
             except EmptyDpsList:
-                if self.basic_info[CONF_IS_GATEWAY]:  # Gateways don't have dps
+                if self.basic_info[CONF_IS_GATEWAY]: # Gateways don't have dps
                     entry = async_config_entry_by_device_id(self.hass, self.unique_id)
                     if entry:
-                        self.hass.config_entries.async_update_entry(
-                            entry, data=user_input
-                        )
+                        self.hass.config_entries.async_update_entry(entry, data=user_input)
                         return self.async_abort(reason="device_updated")
                     return self.async_create_entry(
                         title=user_input[CONF_FRIENDLY_NAME], data=user_input
@@ -420,9 +378,9 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         defaults.update(user_input or {})
         if self.selected_device is not None:
             device = self.devices[self.selected_device]
-            defaults[CONF_HOST] = device.get(PARAMETER_IP)
-            defaults[CONF_DEVICE_ID] = device.get(PARAMETER_GW_ID)
-            defaults[CONF_PROTOCOL_VERSION] = device.get(PARAMETER_VERSION)
+            defaults[CONF_HOST] = device.get("ip")
+            defaults[CONF_DEVICE_ID] = device.get("gwId")
+            defaults[CONF_PROTOCOL_VERSION] = device.get("version")
 
         return self.async_show_form(
             step_id="basic_info",
@@ -440,9 +398,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(user_input[CONF_DEVICE_ID])
                 # Take only the device ID
-                user_input[CONF_PARENT_GATEWAY] = user_input[CONF_PARENT_GATEWAY].split(
-                    " "
-                )[0]
+                user_input[CONF_PARENT_GATEWAY] = user_input[CONF_PARENT_GATEWAY].split(" ")[0]
                 user_input[CONF_PROTOCOL_VERSION] = "3.3"
                 self.basic_info = user_input
 
@@ -462,7 +418,8 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Populate list of gateways to choose from
         current_entries = self.hass.config_entries.async_entries(DOMAIN)
         devices = [
-            entry.data for entry in current_entries if entry.data.get(CONF_IS_GATEWAY)
+            entry.data for entry in current_entries
+            if entry.data.get("is_gateway")
         ]
 
         if len(devices) <= 0:
@@ -533,7 +490,8 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if user_input.get(FLOW_DP) == 0:
                 if self.basic_info.get(CONF_PARENT_GATEWAY):
                     return await self.async_step_basic_sub_device_info(FLOW_DP)
-                return await self.async_step_basic_info(FLOW_DP)
+                else:
+                    return await self.async_step_basic_info(FLOW_DP)
             else:
                 dp_str = str(user_input[FLOW_DP]) + " (value: Custom)"
                 if dp_str not in self.dps_strings:
@@ -562,12 +520,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         """Initialize localtuya options flow."""
         self.config_entry = config_entry
         self.dps_strings = config_entry.data.get(CONF_DPS_STRINGS, gen_dps_strings())
-        self.parent_gateway = None
-        self.entities = []
         if not config_entry.data.get(CONF_IS_GATEWAY):
             self.entities = config_entry.data[CONF_ENTITIES]
-            if config_entry.data.get(CONF_PARENT_GATEWAY):
-                self.parent_gateway = config_entry.data.get(CONF_PARENT_GATEWAY)
         self.data = None
 
     async def async_step_init(self, user_input=None):
@@ -578,25 +532,8 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
             self.data.update(
                 {
                     CONF_DEVICE_ID: device_id,
-                }
-            )
-            if self.config_entry.data.get(CONF_IS_GATEWAY):
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    title=self.data[CONF_FRIENDLY_NAME],
-                    data=self.data,
-                )
-                return self.async_create_entry(title="", data={})
-            if self.parent_gateway:
-                 self.data.update(
-                    {
-                         CONF_PARENT_GATEWAY: self.parent_gateway,
-                    }
-                 )
-            self.data.update(
-                {
-                    CONF_ENTITIES: [],
                     CONF_DPS_STRINGS: self.dps_strings,
+                    CONF_ENTITIES: [],
                 }
             )
             if len(user_input[CONF_ENTITIES]) > 0:
@@ -614,21 +551,12 @@ class LocalTuyaOptionsFlowHandler(config_entries.OptionsFlow):
         if self.config_entry.source == config_entries.SOURCE_IMPORT:
             return await self.async_step_yaml_import()
 
-        if self.parent_gateway is not None:
-            return self.async_show_form(
-                step_id="init",
-                data_schema=schema_defaults(
-                    options_schema_sub_device(self.entities), **self.config_entry.data
-                ),
-                description_placeholders={CONF_DEVICE_ID: device_id},
-            )
-        
         return self.async_show_form(
             step_id="init",
             data_schema=schema_defaults(
                 options_schema(self.entities), **self.config_entry.data
             ),
-            description_placeholders={CONF_DEVICE_ID: device_id},
+            description_placeholders={"device_id": device_id},
         )
 
     async def async_step_entity(self, user_input=None):

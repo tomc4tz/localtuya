@@ -7,32 +7,41 @@ from homeassistant.components.vacuum import (
     DOMAIN,
     STATE_CLEANING,
     STATE_DOCKED,
-    STATE_ERROR,
     STATE_IDLE,
-    STATE_PAUSED,
     STATE_RETURNING,
+    STATE_PAUSED,
+    STATE_ERROR,
+    SUPPORT_BATTERY,
+    SUPPORT_FAN_SPEED,
+    SUPPORT_PAUSE,
+    SUPPORT_RETURN_HOME,
+    SUPPORT_START,
+    SUPPORT_STATE,
+    SUPPORT_STATUS,
+    SUPPORT_STOP,
+    SUPPORT_LOCATE,
     StateVacuumEntity,
-    VacuumEntityFeature,
 )
 
 from .common import LocalTuyaEntity, async_setup_entry
+
 from .const import (
-    CONF_BATTERY_DP,
-    CONF_CLEAN_AREA_DP,
-    CONF_CLEAN_RECORD_DP,
-    CONF_CLEAN_TIME_DP,
-    CONF_DOCKED_STATUS_VALUE,
-    CONF_FAN_SPEED_DP,
-    CONF_FAN_SPEEDS,
-    CONF_FAULT_DP,
+    CONF_POWERGO_DP,
     CONF_IDLE_STATUS_VALUE,
-    CONF_LOCATE_DP,
+    CONF_RETURNING_STATUS_VALUE,
+    CONF_DOCKED_STATUS_VALUE,
+    CONF_BATTERY_DP,
     CONF_MODE_DP,
     CONF_MODES,
+    CONF_FAN_SPEED_DP,
+    CONF_FAN_SPEEDS,
+    CONF_CLEAN_TIME_DP,
+    CONF_CLEAN_AREA_DP,
+    CONF_CLEAN_RECORD_DP,
+    CONF_LOCATE_DP,
+    CONF_FAULT_DP,
     CONF_PAUSED_STATE,
-    CONF_POWERGO_DP,
     CONF_RETURN_MODE,
-    CONF_RETURNING_STATUS_VALUE,
     CONF_STOP_STATUS,
 )
 
@@ -53,9 +62,6 @@ DEFAULT_FAN_SPEEDS = "low,normal,high"
 DEFAULT_PAUSED_STATE = "paused"
 DEFAULT_RETURN_MODE = "chargego"
 DEFAULT_STOP_STATUS = "standby"
-
-SET_MODE = "set_mode"
-MODE = "mode"
 
 
 def flow_schema(dps):
@@ -113,27 +119,27 @@ class LocaltuyaVacuum(LocalTuyaEntity, StateVacuumEntity):
         self._fan_speed = ""
         self._cleaning_mode = ""
 
-        _LOGGER.debug("Initialized vacuum [%s]", self.name)
+        print("Initialized vacuum [{}]".format(self.name))
 
     @property
     def supported_features(self):
         """Flag supported features."""
         supported_features = (
-            VacuumEntityFeature.START
-            | VacuumEntityFeature.PAUSE
-            | VacuumEntityFeature.STOP
-            | VacuumEntityFeature.STATUS
-            | VacuumEntityFeature.STATE
+            SUPPORT_START
+            | SUPPORT_PAUSE
+            | SUPPORT_STOP
+            | SUPPORT_STATUS
+            | SUPPORT_STATE
         )
 
         if self.has_config(CONF_RETURN_MODE):
-            supported_features = supported_features | VacuumEntityFeature.RETURN_HOME
+            supported_features = supported_features | SUPPORT_RETURN_HOME
         if self.has_config(CONF_FAN_SPEED_DP):
-            supported_features = supported_features | VacuumEntityFeature.FAN_SPEED
+            supported_features = supported_features | SUPPORT_FAN_SPEED
         if self.has_config(CONF_BATTERY_DP):
-            supported_features = supported_features | VacuumEntityFeature.BATTERY
+            supported_features = supported_features | SUPPORT_BATTERY
         if self.has_config(CONF_LOCATE_DP):
-            supported_features = supported_features | VacuumEntityFeature.LOCATE
+            supported_features = supported_features | SUPPORT_LOCATE
 
         return supported_features
 
@@ -177,7 +183,7 @@ class LocaltuyaVacuum(LocalTuyaEntity, StateVacuumEntity):
                 self._config[CONF_RETURN_MODE], self._config[CONF_MODE_DP]
             )
         else:
-            _LOGGER.error("Missing command for return home in commands set")
+            _LOGGER.error("Missing command for return home in commands set.")
 
     async def async_stop(self, **kwargs):
         """Turn the vacuum off stopping the cleaning."""
@@ -186,7 +192,7 @@ class LocaltuyaVacuum(LocalTuyaEntity, StateVacuumEntity):
                 self._config[CONF_STOP_STATUS], self._config[CONF_MODE_DP]
             )
         else:
-            _LOGGER.error("Missing command for stop in commands set")
+            _LOGGER.error("Missing command for stop in commands set.")
 
     async def async_clean_spot(self, **kwargs):
         """Perform a spot clean-up."""
@@ -203,8 +209,8 @@ class LocaltuyaVacuum(LocalTuyaEntity, StateVacuumEntity):
 
     async def async_send_command(self, command, params=None, **kwargs):
         """Send a command to a vacuum cleaner."""
-        if command == SET_MODE and MODE in params:
-            mode = params[MODE]
+        if command == "set_mode" and "mode" in params:
+            mode = params["mode"]
             await self._device.set_dp(mode, self._config[CONF_MODE_DP])
 
     def status_updated(self):

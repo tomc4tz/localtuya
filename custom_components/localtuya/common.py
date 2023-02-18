@@ -12,7 +12,6 @@ from homeassistant.const import (
     CONF_ID,
     CONF_PLATFORM,
     CONF_SCAN_INTERVAL,
-    STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -25,15 +24,11 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import pytuya
 from .const import (
-    ATTR_STATE,
-    CONF_DP_INDEX,
     CONF_LOCAL_KEY,
-    CONF_MODEL,
     CONF_PRODUCT_KEY,
     CONF_PROTOCOL_VERSION,
     CONF_IS_GATEWAY,
     CONF_PARENT_GATEWAY,
-    CONF_VALUE,
     DOMAIN,
     GW_REQ_ADD,
     GW_REQ_REMOVE,
@@ -43,10 +38,6 @@ from .const import (
     GW_EVT_STATUS_UPDATED,
     GW_EVT_CONNECTED,
     GW_EVT_DISCONNECTED,
-    PARAMETER_CID,
-    PROPERTY_DPS,
-    STATUS_LAST_USED,
-    STATUS_RETRY,
     SUB_DEVICE_RECONNECT_INTERVAL,
     TUYA_DEVICE,
 )
@@ -211,7 +202,7 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                     timedelta(seconds=self._config_entry[CONF_SCAN_INTERVAL]),
                 )
         except Exception:  # pylint: disable=broad-except
-            self.warning(f"Connect to {self._config_entry[CONF_HOST]} failed")
+            self.exception(f"Connect to {self._config_entry[CONF_HOST]} failed")
             if self._interface is not None:
                 await self._interface.close()
                 self._interface = None
@@ -231,10 +222,6 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             await self._interface.close()
         if self._disconnect_task is not None:
             self._disconnect_task()
-        self.debug(
-            "Closed connection with device %s.",
-            self._config_entry[CONF_FRIENDLY_NAME],
-        )
 
     async def set_dp(self, state, dp_index):
         """Change value of a DP of the Tuya device."""
@@ -263,12 +250,7 @@ class TuyaDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     @callback
     def status_updated(self, status):
         """Device updated status."""
-        self.debug("Got status update:" + str(status))
-        if PROPERTY_DPS in status:
-            status = status[PROPERTY_DPS]
-
         self._status.update(status)
-        self.debug("Got status new:" + str(self._status))
         self._dispatch_status()
 
     def _dispatch_status(self):
@@ -306,9 +288,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
         # Safety check
         if not config_entry.get(CONF_IS_GATEWAY):
-            raise Exception(
-                "Device {config_entry[CONF_DEVICE_ID]} is not a gateway but using TuyaGatewayDevice!"
-            )
+            raise Exception("Device {0} is not a gateway but using TuyaGatewayDevice!", config_entry[CONF_DEVICE_ID])
 
     @property
     def connected(self):
@@ -328,7 +308,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             signal = f"localtuya_gateway_{self._config_entry[CONF_DEVICE_ID]}"
             self._sub_device_task = async_dispatcher_connect(
                 self._hass, signal, self._handle_sub_device_request
-            )
+        )
 
         try:
             self._interface = await pytuya.connect(
@@ -342,20 +322,12 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
             # Re-add and get status of previously added sub-devices
             # Note this assumes the gateway device has not been tear down
-            for subitem in self._sub_devices.items():
-                for value in subitem:
-                    if not isinstance(value, dict):
-                        return
+            for cid in self._sub_devices:
+                self._add_sub_device_interface(cid, self._sub_devices[cid]["dps"])
+                self._dispatch_event(GW_EVT_CONNECTED, None, cid)
 
-                    if PROPERTY_DPS not in value.keys():
-                        return
-
-                    if value[PROPERTY_DPS]:
-                        self._add_sub_device_interface(subitem, subitem[PROPERTY_DPS])
-                        self._dispatch_event(GW_EVT_CONNECTED, None, subitem)
-
-                        # Initial status update
-                        await self._get_sub_device_status(subitem)
+                # Initial status update
+                await self._get_sub_device_status(cid, False)
 
             self._retry_sub_conn_interval = async_track_time_interval(
                 self._hass,
@@ -364,7 +336,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             )
 
         except Exception:  # pylint: disable=broad-except
-            self.warning(f"Connect to gateway {self._config_entry[CONF_HOST]} failed")
+            self.exception(f"Connect to gateway {self._config_entry[CONF_HOST]} failed")
             if self._interface is not None:
                 await self._interface.close()
                 self._interface = None
@@ -373,7 +345,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def _handle_sub_device_request(self, data):
         """Handles a request dispatched from a sub-device"""
         request = data["request"]
-        cid = data[PARAMETER_CID]
+        cid = data["cid"]
         content = data["content"]
 
         self.debug("Received request %s from %s with content %s", request, cid, content)
@@ -382,14 +354,11 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             if cid in self._sub_devices:
                 self.warning("Duplicate sub-device addition for %s", cid)
             else:
-                self._sub_devices[cid] = {
-                    PROPERTY_DPS: content[PROPERTY_DPS],
-                    STATUS_RETRY: False,
-                }
-                self._add_sub_device_interface(cid, content[PROPERTY_DPS])
+                self._sub_devices[cid] = {"dps": content["dps"], "retry_status": False}
+                self._add_sub_device_interface(cid, content["dps"])
                 self._dispatch_event(GW_EVT_CONNECTED, None, cid)
                 # Initial status update
-                await self._get_sub_device_status(cid)
+                await self._get_sub_device_status(cid, False)
         elif request == GW_REQ_REMOVE:
             if cid not in self._sub_devices:
                 self.warning("Invalid sub-device removal request for %s", cid)
@@ -399,15 +368,13 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                     self._interface.remove_sub_device(cid)
                 self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
         elif request == GW_REQ_STATUS:
-            await self._get_sub_device_status(cid)
+            await self._get_sub_device_status(cid, False)
         elif request == GW_REQ_SET_DP:
             if self._interface is not None:
-                await self._interface.set_dp(
-                    content[CONF_VALUE], content[CONF_DP_INDEX], cid
-                )
+                await self._interface.set_dp(content["value"], content["dp_index"], cid)
         elif request == GW_REQ_SET_DPS:
             if self._interface is not None:
-                await self._interface.set_dps(content[PROPERTY_DPS], cid)
+                await self._interface.set_dps(content["dps"], cid)
         else:
             self.debug("Invalid request %s from %s", request, cid)
 
@@ -417,7 +384,7 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
             self._interface.add_sub_device(cid)
             self._interface.add_dps_to_request(dps, cid)
 
-    async def _get_sub_device_status(self, cid):
+    async def _get_sub_device_status(self, cid, is_retry):
         """
         Queries sub-device status and dispatch events depending on if it's a retry.
         Retries are used because we have no way of knowing if a sub-device has disconnected,
@@ -426,38 +393,44 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         """
         if self._interface is not None:
             status = await self._interface.status(cid)
+        else:
+            status = None
+
+        if status:
             self.status_updated(status)
-            self._sub_devices[cid][STATUS_RETRY] = False
+            self._sub_devices[cid]["retry_status"] = False
+            # Commented out by knifehandz 2022/02/13
+            # Skip updating connection based on status updates for now
+            #
+            # if is_retry:
+            #     self._dispatch_event(GW_EVT_CONNECTED, None, cid)
         else:
             # Special case to ask sub-device to use its last cached status
-            self._dispatch_event(GW_EVT_STATUS_UPDATED, {STATUS_LAST_USED: True}, cid)
-            self._sub_devices[cid][STATUS_RETRY] = True
+            self._dispatch_event(GW_EVT_STATUS_UPDATED, {"use_last_status": True}, cid)
+            self._sub_devices[cid]["retry_status"] = True
+            # Skip updating connection based on status updates for now
+            #
+            # if not is_retry:
+            #     self._dispatch_event(GW_EVT_DISCONNECTED, None, cid)
 
     def _dispatch_event(self, event, event_data, cid):
         """Dispatches an event to a sub-device"""
-        self.debug(
-            "Dispatching event %s to sub-device %s with data %s", event, cid, event_data
-        )
+        self.debug("Dispatching event %s to sub-device %s with data %s", event, cid, event_data)
 
         async_dispatcher_send(
             self._hass,
             f"localtuya_subdevice_{cid}",
-            {"event": event, "event_data": event_data},
+            {
+                "event": event,
+                "event_data": event_data
+            }
         )
 
     async def _retry_sub_device_connection(self, _now):
-        """Retries sub-device status, to be called by a HASS interval"""
-
-        for subitem in self._sub_devices.items():
-            for value in subitem:
-                if not isinstance(value, dict):
-                    return
-
-                if STATUS_RETRY not in value.keys():
-                    return
-
-                if value[STATUS_RETRY]:
-                    await self._get_sub_device_status(subitem)
+        """ Retries sub-device status, to be called by a HASS interval """
+        for cid in self._sub_devices:
+            if self._sub_devices[cid]["retry_status"]:
+                await self._get_sub_device_status(cid, True)
 
     async def close(self):
         """Close connection and stop re-connect loop."""
@@ -473,8 +446,6 @@ class TuyaGatewayDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     @callback
     def status_updated(self, status):
         """Device updated status."""
-        if status is None:
-            return
         cid = status["last_updated_cid"]
         if cid == "":  # Not a status update we are interested in
             return
@@ -515,9 +486,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
 
         # Safety check
         if not config_entry.get(CONF_PARENT_GATEWAY):
-            raise Exception(
-                "Device {config_entry[CONF_DEVICE_ID]} is not a sub-device but using TuyaSubDevice!"
-            )
+            raise Exception("Device {0} is not a sub-device but using TuyaSubDevice!", config_entry[CONF_DEVICE_ID])
 
         # Populate dps list from entities
         for entity in config_entry[CONF_ENTITIES]:
@@ -555,9 +524,9 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
                 self._hass, signal, _new_entity_handler
             )
 
-            self._async_dispatch_gateway_request(
-                GW_REQ_ADD, {PROPERTY_DPS: self.dps_to_request}
-            )
+            self._async_dispatch_gateway_request(GW_REQ_ADD, {
+                "dps": self.dps_to_request
+            })
 
             self._is_added = True
 
@@ -571,29 +540,22 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
         if event == GW_EVT_STATUS_UPDATED:
             self.status_updated(event_data)
         elif event == GW_EVT_CONNECTED:
-            self.is_connected(True)
+            self._is_connected = True
         elif event == GW_EVT_DISCONNECTED:
             self.disconnected()
         else:
             self.debug("Invalid event %s from gateway", event)
 
-    def is_connected(self, connected):
-        """Set is_connected is connected on  Tuya device."""
-        if self._is_connected != connected:
-            self._is_connected = connected
-
     def _async_dispatch_gateway_request(self, request, content):
         """Dispatches a request to the parent gateway using a retry loop"""
-        self.debug(
-            "Dispatching request %s to gateway with content %s", request, content
-        )
+        self.debug("Dispatching request %s to gateway with content %s", request, content)
 
         async_dispatcher_send(
             self._hass,
             f"localtuya_gateway_{self._parent_gateway}",
             {
                 "request": request,
-                PARAMETER_CID: self._config_entry[CONF_DEVICE_ID],
+                "cid": self._config_entry[CONF_DEVICE_ID],
                 "content": content,
             },
         )
@@ -601,13 +563,10 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def set_dp(self, state, dp_index):
         """Change value of a DP of the Tuya device."""
         if self._is_connected:
-            self._async_dispatch_gateway_request(
-                GW_REQ_SET_DP,
-                {
-                    CONF_VALUE: state,
-                    CONF_DP_INDEX: dp_index,
-                },
-            )
+            self._async_dispatch_gateway_request(GW_REQ_SET_DP, {
+                "value": state,
+                "dp_index": dp_index,
+            })
         else:
             self.error(
                 "Not connected to device %s", self._config_entry[CONF_FRIENDLY_NAME]
@@ -616,12 +575,9 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     async def set_dps(self, states):
         """Change value of DPs of the Tuya device."""
         if self._is_connected:
-            self._async_dispatch_gateway_request(
-                GW_REQ_SET_DPS,
-                {
-                    PROPERTY_DPS: states,
-                },
-            )
+            self._async_dispatch_gateway_request(GW_REQ_SET_DPS, {
+                "dps": states,
+            })
         else:
             self.error(
                 "Not connected to device %s", self._config_entry[CONF_FRIENDLY_NAME]
@@ -640,7 +596,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     @callback
     def status_updated(self, status):
         """Device updated status."""
-        if not status.get(STATUS_LAST_USED):
+        if not status.get("use_last_status"):
             self._status.update(status)
         self._dispatch_status()
 
@@ -652,7 +608,7 @@ class TuyaSubDevice(pytuya.TuyaListener, pytuya.ContextualLogger):
     @callback
     def disconnected(self):
         """Device disconnected."""
-        self.is_connected(False)
+        self._is_connected = False
         signal = f"localtuya_{self._config_entry[CONF_DEVICE_ID]}"
         async_dispatcher_send(self._hass, signal, None)
 
@@ -670,8 +626,6 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         self._config = get_entity_config(config_entry, dp_id)
         self._dp_id = dp_id
         self._status = {}
-        self._state = None
-        self._last_state = None
         self.set_logger(logger, self._config_entry.data[CONF_DEVICE_ID])
 
     async def async_added_to_hass(self):
@@ -709,21 +663,6 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
         async_dispatcher_send(self.hass, signal, self.entity_id)
 
     @property
-    def extra_state_attributes(self):
-        """Return entity specific state attributes to be saved.
-        These attributes are then available for restore when the
-        entity is restored at startup.
-        """
-        attributes = {}
-        if self._state is not None:
-            attributes[ATTR_STATE] = self._state
-        elif self._last_state is not None:
-            attributes[ATTR_STATE] = self._last_state
-
-        self.debug("Entity %s - Additional attributes: %s", self.name, attributes)
-        return attributes
-
-    @property
     def device_info(self):
         """Return device information for the device registry."""
         return {
@@ -732,10 +671,9 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
                 (DOMAIN, f"local_{self._config_entry.data[CONF_DEVICE_ID]}")
             },
             "name": self._config_entry.data[CONF_FRIENDLY_NAME],
-            "manufacturer": "Tuya generic",
-            "model": self._config_entry.data.get(CONF_MODEL),  # model
+            "manufacturer": "Unknown",
+            "model": self._config_entry.data.get(CONF_PRODUCT_KEY, "Tuya generic"),
             "sw_version": self._config_entry.data[CONF_PROTOCOL_VERSION],
-            "hw_version": self._config_entry.data.get(CONF_PRODUCT_KEY),  # product_name
         }
 
     @property
@@ -795,59 +733,9 @@ class LocalTuyaEntity(RestoreEntity, pytuya.ContextualLogger):
 
         Override in subclasses and update entity specific state.
         """
-        state = self.dps(self._dp_id)
-        if state is not None:
-            self._state = state
 
     def status_restored(self, stored_state):
         """Device status was restored.
 
         Override in subclasses and update entity specific state.
         """
-        raw_state = stored_state.attributes.get(ATTR_STATE)
-        if raw_state is not None:
-            self._last_state = raw_state
-            self.debug(
-                "Restoring state for entity: %s - state: %s",
-                self.name,
-                str(self._last_state),
-            )
-
-    def entity_default_value(self):  # pylint: disable=no-self-use
-        """Return default value of the entity type.
-        Override in subclasses to specify the default value for the entity.
-        """
-        return 0
-
-    @property
-    def restore_on_reconnect(self):
-        """Return whether the last state should be restored on a reconnect.
-        Useful where the device loses settings if powered off
-        """
-
-    async def restore_state_when_connected(self):
-        """Restore if restore_on_reconnect is set, or if no status has been yet found.
-        Which indicates a DPS that needs to be set before it starts returning
-        status.
-        """
-
-        self.debug("Attempting to restore state for entity: %s", self.name)
-        # Attempt to restore the current state - in case reset.
-        restore_state = self._state
-
-        # If no state stored in the entity currently, go from last saved state
-        if (restore_state == STATE_UNKNOWN) | (restore_state is None):
-            self.debug("No current state for entity")
-            restore_state = self._last_state
-
-        # If no current or saved state, then use the default value
-
-        self.debug(
-            "Entity %s (DP %d) - Restoring state: %s",
-            self.name,
-            self._dp_id,
-            str(restore_state),
-        )
-
-        # Manually initialise
-        await self._device.set_dp(restore_state, self._dp_id)

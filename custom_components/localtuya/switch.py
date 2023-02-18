@@ -9,12 +9,9 @@ from .common import LocalTuyaEntity, async_setup_entry
 from .const import (
     ATTR_CURRENT,
     ATTR_CURRENT_CONSUMPTION,
-    ATTR_STATE,
     ATTR_VOLTAGE,
     CONF_CURRENT,
     CONF_CURRENT_CONSUMPTION,
-    CONF_DEFAULT_VALUE,
-    CONF_RESTORE_ON_RECONNECT,
     CONF_VOLTAGE,
 )
 
@@ -27,8 +24,6 @@ def flow_schema(dps):
         vol.Optional(CONF_CURRENT): vol.In(dps),
         vol.Optional(CONF_CURRENT_CONSUMPTION): vol.In(dps),
         vol.Optional(CONF_VOLTAGE): vol.In(dps),
-        vol.Required(CONF_RESTORE_ON_RECONNECT, default=True): bool,
-        vol.Optional(CONF_DEFAULT_VALUE): str,
     }
 
 
@@ -45,7 +40,7 @@ class LocaltuyaSwitch(LocalTuyaEntity, SwitchEntity):
         """Initialize the Tuya switch."""
         super().__init__(device, config_entry, switchid, _LOGGER, **kwargs)
         self._state = None
-        _LOGGER.debug("Initialized switch [%s]", self.name)
+        print("Initialized switch [{}]".format(self.name))
 
     @property
     def is_on(self):
@@ -57,22 +52,13 @@ class LocaltuyaSwitch(LocalTuyaEntity, SwitchEntity):
         """Return device state attributes."""
         attrs = {}
         if self.has_config(CONF_CURRENT):
-            current = self.dps(self._config[CONF_CURRENT])
-            if current is not None:
-                attrs[ATTR_CURRENT] = current
+            attrs[ATTR_CURRENT] = self.dps(self._config[CONF_CURRENT])
         if self.has_config(CONF_CURRENT_CONSUMPTION):
-            consumption = self.dps(self._config[CONF_CURRENT_CONSUMPTION])
-            if consumption is not None:
-                attrs[ATTR_CURRENT_CONSUMPTION] = consumption / 10
+            attrs[ATTR_CURRENT_CONSUMPTION] = (
+                self.dps(self._config[CONF_CURRENT_CONSUMPTION]) / 10
+            )
         if self.has_config(CONF_VOLTAGE):
-            voltage = self.dps(self._config[CONF_VOLTAGE])
-            if voltage is not None:
-                attrs[ATTR_VOLTAGE] = voltage / 10
-        # Store the state
-        if self._state is not None:
-            attrs[ATTR_STATE] = self._state
-        elif self._last_state is not None:
-            attrs[ATTR_STATE] = self._last_state
+            attrs[ATTR_VOLTAGE] = self.dps(self._config[CONF_VOLTAGE]) / 10
         return attrs
 
     async def async_turn_on(self, **kwargs):
@@ -85,14 +71,7 @@ class LocaltuyaSwitch(LocalTuyaEntity, SwitchEntity):
 
     def status_updated(self):
         """Device status was updated."""
-        state = self.dps(self._dp_id)
-        if state is not None:
-            self._state = state
-
-    # Default value is the "OFF" state
-    def entity_default_value(self):
-        """Return False as the default value for this entity type."""
-        return False
+        self._state = self.dps(self._dp_id)
 
 
 async_setup_entry = partial(async_setup_entry, DOMAIN, LocaltuyaSwitch, flow_schema)

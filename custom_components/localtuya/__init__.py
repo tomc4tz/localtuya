@@ -100,16 +100,11 @@ from .common import (
 )
 from .config_flow import config_schema
 from .const import (
-    CONF_DP,
     CONF_PRODUCT_KEY,
     CONF_IS_GATEWAY,
     CONF_PARENT_GATEWAY,
-    CONF_VALUE,
     DATA_DISCOVERY,
     DOMAIN,
-    PARAMETER_GW_ID,
-    PARAMETER_IP,
-    PARAMETER_PRODUCT_KEY,
     TUYA_DEVICE,
 )
 from .discovery import TuyaDiscovery
@@ -122,6 +117,8 @@ RECONNECT_INTERVAL = timedelta(seconds=60)
 
 CONFIG_SCHEMA = config_schema()
 
+CONF_DP = "dp"
+CONF_VALUE = "value"
 
 SERVICE_SET_DP = "set_dp"
 SERVICE_SET_DP_SCHEMA = vol.Schema(
@@ -186,18 +183,17 @@ async def async_setup(hass: HomeAssistant, config: dict):
 
     def _device_discovered(device):
         """Update address of device if it has changed."""
-        device_ip = device[PARAMETER_IP]
-        device_id = device[PARAMETER_GW_ID]
-        product_key = device[PARAMETER_PRODUCT_KEY]
+        device_ip = device["ip"]
+        device_id = device["gwId"]
+        product_key = device["productKey"]
 
         # If device is not in cache, check if a config entry exists
         if device_id not in device_cache:
             entry = async_config_entry_by_device_id(hass, device_id)
-            if not entry:
-                return
-            # Save address from config entry in cache to trigger
-            # potential update below
-            device_cache[device_id] = entry.data[CONF_HOST]
+            if entry:
+                # Save address from config entry in cache to trigger
+                # potential update below
+                device_cache[device_id] = entry.data[CONF_HOST]
 
         if device_id not in device_cache:
             return
@@ -240,7 +236,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
         hass.data[DOMAIN][DATA_DISCOVERY] = discovery
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown)
     except Exception:  # pylint: disable=broad-except
-        _LOGGER.exception("Failed to set up discovery")
+        _LOGGER.exception("failed to set up discovery")
 
     async def _async_reconnect(now):
         """Try connecting to devices not already connected to."""
